@@ -16,6 +16,12 @@ export function getNextCutoff(from: Date = new Date()): Date {
   return getFirstFriday(nextYear, nextMonth)
 }
 
+export function getGenerationDate(cutoff: Date): Date {
+  const d = new Date(cutoff)
+  d.setDate(d.getDate() - 14)
+  return d
+}
+
 export function formatCutoff(date: Date): string {
   return date.toLocaleDateString('es-CO', {
     weekday: 'long',

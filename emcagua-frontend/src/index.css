@@ -35,14 +35,14 @@
   --color-dark-light: #3A4A3A;
   --color-muted: #9AA09A;
   --color-muted-light: #B8BDB8;
-  --color-border: #EDEEF0;
+  --color-border: #E9EBE7;
   --color-border-light: #F2F3F1;
-  --color-gray-soft: #F8F9F7;
+  --color-gray-soft: #F6F7F5;
   --color-gray-100: #F2F3F1;
   --color-gray-200: #E9EBE7;
   --color-gray-medium: #E9EBE7;
   --color-surface: #FFFFFF;
-  --color-background: #F8F9F7;
+  --color-background: #F4F5F3;
 
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
 }

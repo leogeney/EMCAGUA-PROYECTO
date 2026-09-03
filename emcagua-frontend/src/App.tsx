@@ -4,6 +4,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Users from './pages/Users'
 import Facturacion from './pages/Facturacion'
+import Pagos from './pages/Pagos'
 import Placeholder from './pages/Placeholder'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -39,7 +40,7 @@ export default function App() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/usuarios" element={<Users />} />
         <Route path="/facturacion" element={<Facturacion />} />
-        <Route path="/pagos" element={<Placeholder title="Pagos" description="Registro y control de pagos" />} />
+        <Route path="/pagos" element={<Pagos />} />
         <Route path="/pqr" element={<Placeholder title="PQR" description="Peticiones, quejas y reclamos" />} />
       </Route>
       <Route path="/" element={<Navigate to="/dashboard" replace />} />

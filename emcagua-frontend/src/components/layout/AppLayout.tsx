@@ -6,7 +6,7 @@ export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   return (
-    <div className="flex h-screen bg-[#F8F9F7]">
+    <div className="flex h-screen bg-[#F4F5F3]">
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex-1 flex flex-col min-w-0">
         <header className="h-[64px] bg-white/80 backdrop-blur-md border-b border-gray-100 flex items-center px-4 lg:px-6 gap-3 sticky top-0 z-30">

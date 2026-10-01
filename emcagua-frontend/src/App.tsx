@@ -6,15 +6,17 @@ import Users from './pages/Users'
 import Facturacion from './pages/Facturacion'
 import Pagos from './pages/Pagos'
 import Placeholder from './pages/Placeholder'
+import Analitica from './pages/Analitica'
+import { isLoggedIn } from './utils/session'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const isAuth = !!localStorage.getItem('emcagua_user')
+  const isAuth = isLoggedIn()
   if (!isAuth) return <Navigate to="/login" replace />
   return <>{children}</>
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
-  const isAuth = !!localStorage.getItem('emcagua_user')
+  const isAuth = isLoggedIn()
   if (isAuth) return <Navigate to="/dashboard" replace />
   return <>{children}</>
 }
@@ -41,6 +43,7 @@ export default function App() {
         <Route path="/usuarios" element={<Users />} />
         <Route path="/facturacion" element={<Facturacion />} />
         <Route path="/pagos" element={<Pagos />} />
+        <Route path="/analitica" element={<Analitica />} />
         <Route path="/pqr" element={<Placeholder title="PQR" description="Peticiones, quejas y reclamos" />} />
       </Route>
       <Route path="/" element={<Navigate to="/dashboard" replace />} />

@@ -24,3 +24,8 @@ export function login(username: string) {
 export function logout() {
   localStorage.removeItem(KEY)
 }
+
+/** Modo demo: solo el usuario "admin" tiene rol de administrador. */
+export function isAdmin() {
+  return getUsername('').trim().toLowerCase() === 'admin'
+}

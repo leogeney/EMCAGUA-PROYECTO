@@ -1,6 +1,6 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import Logo from '../Logo'
-import { getUsername, logout } from '../../utils/session'
+import { getUsername, isAdmin, logout } from '../../utils/session'
 
 type SidebarProps = { isOpen: boolean; onClose: () => void }
 
@@ -17,6 +17,10 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const username = getUsername()
+  const admin = isAdmin()
+  const items = admin
+    ? [...navItems.slice(0, -1), { label: 'Nómina', path: '/nomina', badge: 'Admin', icon: (<svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.6} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>) }, navItems[navItems.length - 1]]
+    : navItems
 
   return (
     <>
@@ -27,7 +31,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
         </div>
         <nav className="flex-1 px-3 py-5 space-y-1 overflow-y-auto">
           <p className="px-3 pb-2 text-[11px] font-semibold tracking-[0.12em] text-gray-400 uppercase">Menú</p>
-          {navItems.map((item) => {
+          {items.map((item) => {
             const active = location.pathname === item.path
             return (
               <Link key={item.path} to={item.path} onClick={onClose} className={`group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all no-underline ${active ? 'bg-dark text-white shadow-[0_2px_8px_rgba(0,0,0,0.12)]' : 'text-gray-600 hover:bg-gray-50 hover:text-dark'}`}>
@@ -43,7 +47,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
             <div className="h-9 w-9 rounded-xl bg-white border border-gray-100 shadow-sm flex items-center justify-center text-sm font-bold text-dark">{username.charAt(0).toUpperCase()}</div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-dark truncate leading-none">{username}</p>
-              <p className="text-xs text-gray-500 truncate">Trabajador EMCAGUA</p>
+              <p className="text-xs text-gray-500 truncate">{admin ? 'Administrador' : 'Trabajador EMCAGUA'}</p>
             </div>
             <span className="h-2 w-2 bg-green-500 rounded-full animate-pulse" />
           </div>

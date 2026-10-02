@@ -226,7 +226,7 @@ export default function Login() {
             </form>
 
             <div className="mt-8 rounded-2xl border border-dashed border-amber-200 bg-amber-50/60 px-4 py-3 text-center">
-              <p className="text-xs text-amber-800"><span className="font-semibold">Modo demostración:</span> cualquier usuario y contraseña te dejan entrar.</p>
+              <p className="text-xs text-amber-800"><span className="font-semibold">Modo demostración:</span> cualquier usuario y contraseña te dejan entrar. Usa el usuario <b>admin</b> para ver Nómina.</p>
             </div>
           </div>
         </div>

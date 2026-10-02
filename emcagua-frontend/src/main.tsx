@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App'
 import { DataProvider } from './data/DataContext'
+import { NominaProvider } from './data/NominaContext'
 import { ToastProvider } from './components/ui/Toast'
 
 createRoot(document.getElementById('root')!).render(
@@ -11,7 +12,9 @@ createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <ToastProvider>
         <DataProvider>
-          <App />
+          <NominaProvider>
+            <App />
+          </NominaProvider>
         </DataProvider>
       </ToastProvider>
     </BrowserRouter>

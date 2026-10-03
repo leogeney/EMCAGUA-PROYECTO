@@ -7,7 +7,7 @@ export type EstadoNomina = 'Borrador' | 'Aprobada' | 'Pagada'
 export type Evento = { ts: number; usuario: string; accion: string }
 export type PeriodoNomina = { clave: string; anio: number; mes: number; estado: EstadoNomina; novedades: Record<string, Novedad>; log: Evento[] }
 
-export const clavePeriodo = (anio: number, mes: number) => `${anio}-${String(mes).padStart(2, '0')}`
+export const claveNomina = (anio: number, mes: number) => `${anio}-${String(mes).padStart(2, '0')}`
 
 type Ctx = {
   parametros: Parametros
@@ -29,7 +29,7 @@ function semilla(): Record<string, PeriodoNomina> {
     const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1)
     const anio = d.getFullYear()
     const mes = d.getMonth() + 1
-    const k = clavePeriodo(anio, mes)
+    const k = claveNomina(anio, mes)
     const activos = EMPLEADOS_DEMO.filter((e) => new Date(e.fechaIngreso) <= new Date(anio, mes, 0))
     const fin = new Date(anio, mes, 0)
     out[k] = {
@@ -54,24 +54,20 @@ export function NominaProvider({ children }: { children: ReactNode }) {
   const [empleados, setEmpleados] = useState<Empleado[]>(EMPLEADOS_DEMO)
   const [periodos, setPeriodos] = useState<Record<string, PeriodoNomina>>(semilla)
 
+  /** Periodo guardado o, si no existe, uno nuevo en borrador con los empleados activos. */
+  const asegurar = (prev: Record<string, PeriodoNomina>, clave: string): PeriodoNomina => {
+    if (prev[clave]) return prev[clave]
+    const [anio, mes] = clave.split('-').map(Number)
+    const novedades: Record<string, Novedad> = {}
+    empleados.filter((e) => e.activo).forEach((e) => (novedades[e.id] = { ...NOVEDAD_VACIA }))
+    return { clave, anio, mes, estado: 'Borrador', novedades, log: [] }
+  }
+
   const obtenerPeriodo = useCallback(
-    (anio: number, mes: number): PeriodoNomina => {
-      const k = clavePeriodo(anio, mes)
-      if (periodos[k]) return periodos[k]
-      const nov: Record<string, Novedad> = {}
-      empleados.filter((e) => e.activo).forEach((e) => (nov[e.id] = { ...NOVEDAD_VACIA }))
-      return { clave: k, anio, mes, estado: 'Borrador', novedades: nov, log: [] }
-    },
+    (anio: number, mes: number) => asegurar(periodos, claveNomina(anio, mes)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [periodos, empleados],
   )
-
-  const asegurar = (prev: Record<string, PeriodoNomina>, clave: string) => {
-    if (prev[clave]) return prev[clave]
-    const [a, m] = clave.split('-').map(Number)
-    const nov: Record<string, Novedad> = {}
-    empleados.filter((e) => e.activo).forEach((e) => (nov[e.id] = { ...NOVEDAD_VACIA }))
-    return { clave, anio: a, mes: m, estado: 'Borrador' as const, novedades: nov, log: [] }
-  }
 
   const setNovedad = useCallback(
     (clave: string, empleadoId: string, n: Novedad) => {
@@ -106,7 +102,7 @@ export function NominaProvider({ children }: { children: ReactNode }) {
     // Si es nuevo, entra a la nómina en borrador del mes actual
     setPeriodos((prev) => {
       const hoy = new Date()
-      const k = clavePeriodo(hoy.getFullYear(), hoy.getMonth() + 1)
+      const k = claveNomina(hoy.getFullYear(), hoy.getMonth() + 1)
       const p = prev[k]
       if (!p || p.estado !== 'Borrador' || p.novedades[e.id] || !e.activo) return prev
       return { ...prev, [k]: { ...p, novedades: { ...p.novedades, [e.id]: { ...NOVEDAD_VACIA } } } }

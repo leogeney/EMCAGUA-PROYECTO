@@ -313,26 +313,3 @@ export function BarList({ data, format, color = CHART.serie1, max }: BarListProp
   )
 }
 
-/* ------------------------------------------------------------------ */
-/* Sparkline                                                           */
-/* ------------------------------------------------------------------ */
-
-export function Sparkline({ values, color = CHART.serie1, height = 40 }: { values: number[]; color?: string; height?: number }) {
-  const [ref, width] = useWidth<HTMLDivElement>()
-  const max = Math.max(...values, 1)
-  const min = Math.min(...values, 0)
-  const x = (i: number) => 4 + (i / Math.max(1, values.length - 1)) * (width - 8)
-  const y = (v: number) => 4 + (1 - (v - min) / (max - min || 1)) * (height - 8)
-  const d = values.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join('')
-  return (
-    <div ref={ref} style={{ height }}>
-      {width > 0 && (
-        <svg width={width} height={height} aria-hidden="true">
-          <path d={`${d}L${x(values.length - 1)},${height}L${x(0)},${height}Z`} fill={color} opacity={0.1} />
-          <path d={d} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-          <circle cx={x(values.length - 1)} cy={y(values[values.length - 1])} r={3.5} fill={color} stroke="#fff" strokeWidth={2} />
-        </svg>
-      )}
-    </div>
-  )
-}

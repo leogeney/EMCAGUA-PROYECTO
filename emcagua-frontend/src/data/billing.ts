@@ -22,6 +22,33 @@ export const nombrePeriodo = (mes: number, anio: number) => `${MESES[mes - 1]} $
 export const montoPeriodo = (consumo: number, estrato: number) => consumo * TARIFA[estrato]
 export const clavePeriodo = (mes: number, anio: number) => anio * 12 + (mes - 1)
 
+/** "2026-9" o "2026-09" → { anio: 2026, mes: 9 } */
+export function leerPeriodo(valor: string) {
+  const [anio, mes] = valor.split('-').map(Number)
+  return { anio, mes }
+}
+
+/** Periodos con facturas en los datos (cronológico), los últimos `n`. */
+export function periodosFacturados(usuarios: Usuario[], n = 12) {
+  const set = new Map<number, { mes: number; anio: number }>()
+  for (const u of usuarios) for (const p of u.historial) set.set(clavePeriodo(p.mes, p.anio), { mes: p.mes, anio: p.anio })
+  return [...set.entries()].sort((a, b) => a[0] - b[0]).slice(-n).map(([, v]) => v)
+}
+
+/** Periodo siguiente al último facturado: el que está en toma de lecturas. */
+export function periodoEnLectura(usuarios: Usuario[]) {
+  const ult = periodosFacturados(usuarios, 1)[0] ?? ultimoPeriodo()
+  const d = new Date(ult.anio, ult.mes, 1)
+  return { mes: d.getMonth() + 1, anio: d.getFullYear() }
+}
+
+/** Lectura acumulada del medidor (m³) al cierre del último periodo. */
+export function lecturaMedidor(u: Usuario) {
+  let h = 0
+  for (const ch of u.id) h = (h * 31 + ch.charCodeAt(0)) % 9973
+  return 1200 + (h % 3800) + u.historial.reduce((s, p) => s + p.consumo, 0)
+}
+
 /** Último periodo ya facturado a la fecha `hoy`. */
 export function ultimoPeriodo(hoy = new Date()): { mes: number; anio: number } {
   const mes = hoy.getMonth() + 1

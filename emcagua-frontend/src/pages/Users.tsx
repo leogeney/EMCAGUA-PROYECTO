@@ -3,9 +3,10 @@ import { useSearchParams } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { useData } from '../data/DataContext'
 import { BARRIOS, CHART, COSTO_RECONEXION, MESES, TARIFA, UMBRAL_ALTO } from '../data/constants'
-import { facturasDe, nombrePeriodo, periodosRecientes } from '../data/billing'
+import { facturasDe, leerPeriodo, nombrePeriodo, periodosFacturados } from '../data/billing'
 import type { Usuario, UsuarioForm } from '../data/types'
 import WhatsAppIcon from '../components/WhatsAppIcon'
+import Ico from '../components/ui/Icon'
 import Modal, { ConfirmDialog } from '../components/ui/Modal'
 import Drawer from '../components/ui/Drawer'
 import Avatar from '../components/ui/Avatar'
@@ -18,6 +19,13 @@ import { formatCutoff, getNextCutoff } from '../utils/cutoff'
 import { cop, fechaCorta, num } from '../utils/format'
 import { exportarXls } from '../utils/excel'
 import { whatsappUrl } from '../utils/whatsapp'
+
+/** Lectura del periodo elegido ('actual' = la última registrada). */
+function lecturaEn(u: Usuario, periodo: string) {
+  if (periodo === 'actual') return u.historial[u.historial.length - 1]
+  const { anio, mes } = leerPeriodo(periodo)
+  return u.historial.find((h) => h.anio === anio && h.mes === mes)
+}
 
 type Tab = 'todos' | 'aldia' | 'deuda' | 'vencidos' | 'cortados' | 'alto'
 const POR_PAGINA = 10
@@ -49,9 +57,6 @@ const I = {
   gauge: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
   tag: 'M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z',
 }
-const Ico = ({ d, className = 'w-4 h-4' }: { d: string; className?: string }) => (
-  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d={d} /></svg>
-)
 
 /** Mini tendencia de consumo (6 meses). */
 function MiniSpark({ values, alto }: { values: number[]; alto: boolean }) {
@@ -131,9 +136,9 @@ function SelectPill({ label, value, onChange, children }: { label: string; value
 /* ------------------------------------------------------------------ */
 export default function Users() {
   const { usuarios, resumen, crearUsuario, editarUsuario, cortar, reactivar } = useData()
+  const periodos = useMemo(() => periodosFacturados(usuarios, 12).reverse(), [usuarios])
   const toast = useToast()
   const [params, setParams] = useSearchParams()
-  const periodos = useMemo(() => periodosRecientes(12).reverse(), [])
 
   const [tab, setTab] = useState<Tab>(params.get('filtro') === 'vencidos' ? 'vencidos' : 'todos')
   const [search, setSearch] = useState('')
@@ -157,12 +162,8 @@ export default function Users() {
 
   const perfil = usuarios.find((u) => u.id === perfilId) ?? null
 
-  const periodoDe = (u: Usuario) => {
-    if (periodo === 'actual') return u.historial[u.historial.length - 1]
-    const [a, m] = periodo.split('-').map(Number)
-    return u.historial.find((h) => h.anio === a && h.mes === m)
-  }
-  const etiquetaPeriodo = periodo === 'actual' ? 'último periodo' : (() => { const [a, m] = periodo.split('-').map(Number); return nombrePeriodo(m, a) })()
+  const periodoDe = (u: Usuario) => lecturaEn(u, periodo)
+  const etiquetaPeriodo = periodo === 'actual' ? 'último periodo' : (() => { const { anio, mes } = leerPeriodo(periodo); return nombrePeriodo(mes, anio) })()
 
   // Conteos por pestaña
   const conteos = useMemo(() => {
@@ -180,11 +181,7 @@ export default function Users() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    const consumo = (u: Usuario) => {
-      if (periodo === 'actual') return resumen(u).consumoActual
-      const [a, m] = periodo.split('-').map(Number)
-      return u.historial.find((h) => h.anio === a && h.mes === m)?.consumo ?? 0
-    }
+    const consumo = (u: Usuario) => lecturaEn(u, periodo)?.consumo ?? 0
     const res = usuarios.filter((u) => {
       const r = resumen(u)
       if (q && !u.nombre.toLowerCase().includes(q) && !u.id.includes(q) && !u.medidor.toLowerCase().includes(q) && !u.telefono.replace(/\D/g, '').includes(q.replace(/\D/g, '') || '§')) return false

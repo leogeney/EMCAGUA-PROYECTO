@@ -1,5 +1,5 @@
 import { BARRIOS, ESTRATOS, MESES_CORTOS, UMBRAL_ALTO } from './constants'
-import { montoPeriodo, nombrePeriodo, periodosRecientes, resumenUsuario, vencimientoPeriodo } from './billing'
+import { montoPeriodo, nombrePeriodo, periodosFacturados, resumenUsuario, vencimientoPeriodo } from './billing'
 import type { Usuario } from './types'
 
 export type PuntoMensual = {
@@ -16,8 +16,8 @@ export type PuntoMensual = {
   usuariosConsumo: number
 }
 
-export function serieMensual(usuarios: Usuario[], n = 12, hoy = new Date()): PuntoMensual[] {
-  return periodosRecientes(n, hoy).map(({ mes, anio }) => {
+export function serieMensual(usuarios: Usuario[], n = 12): PuntoMensual[] {
+  return periodosFacturados(usuarios, n).map(({ mes, anio }) => {
     const p: PuntoMensual = { mes, anio, label: `${MESES_CORTOS[mes - 1]}`, full: nombrePeriodo(mes, anio), consumo: 0, facturado: 0, recaudado: 0, pendiente: 0, facturas: 0, pagadas: 0, usuariosConsumo: 0 }
     for (const u of usuarios) {
       const per = u.historial.find((h) => h.mes === mes && h.anio === anio)

@@ -1,12 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { login } from '../utils/session'
+import Icon from '../components/ui/Icon'
 
-const Ico = ({ d, className = 'w-[18px] h-[18px]' }: { d: string; className?: string }) => (
-  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d={d} />
-  </svg>
-)
+const Ico = ({ d, className = 'w-[18px] h-[18px]' }: { d: string; className?: string }) => <Icon d={d} className={className} />
 
 const D = {
   user: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z',

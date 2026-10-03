@@ -6,6 +6,7 @@ export type Periodo = {
   consumo: number // m³
   estado: EstadoPeriodo
   fechaPago?: number // timestamp
+  estimado?: boolean // facturado por promedio (sin lectura)
 }
 
 export type EstadoServicio = 'Activo' | 'Cortado'
@@ -61,4 +62,36 @@ export type UsuarioForm = {
   estrato: 1 | 2 | 3
   medidor: string
   telefono: string
+}
+
+export type Lectura = {
+  valor: number // lectura del medidor (m³ acumulados)
+  ts: number
+  lector: string // 'Telemetría' o el usuario que la tomó en sitio
+  origen: 'telemetria' | 'manual'
+  foto?: string
+  nota?: string
+}
+
+export type TipoPqr = 'Petición' | 'Queja' | 'Reclamo' | 'Recurso' | 'Sugerencia'
+export type CategoriaPqr = 'Facturación' | 'Daño o fuga' | 'Calidad del agua' | 'Corte y reconexión' | 'Atención' | 'Otro'
+export type EstadoPqr = 'Radicada' | 'En trámite' | 'Respondida' | 'Cerrada'
+
+export type Pqr = {
+  radicado: string
+  tipo: TipoPqr
+  categoria: CategoriaPqr
+  canal: 'Presencial' | 'Teléfono' | 'WhatsApp' | 'Correo'
+  suscriptorId?: string
+  nombre: string
+  telefono: string
+  barrio: string
+  descripcion: string
+  estado: EstadoPqr
+  radicadaEn: number
+  vence: number
+  responsable?: string
+  respuesta?: string
+  respondidaEn?: number
+  historial: { ts: number; usuario: string; accion: string }[]
 }

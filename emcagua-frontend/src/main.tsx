@@ -5,6 +5,8 @@ import './index.css'
 import App from './App'
 import { DataProvider } from './data/DataContext'
 import { NominaProvider } from './data/NominaContext'
+import { PqrProvider } from './data/PqrContext'
+import { DocumentosProvider } from './data/DocumentosContext'
 import { ToastProvider } from './components/ui/Toast'
 
 createRoot(document.getElementById('root')!).render(
@@ -13,7 +15,11 @@ createRoot(document.getElementById('root')!).render(
       <ToastProvider>
         <DataProvider>
           <NominaProvider>
-            <App />
+            <PqrProvider>
+              <DocumentosProvider>
+                <App />
+              </DocumentosProvider>
+            </PqrProvider>
           </NominaProvider>
         </DataProvider>
       </ToastProvider>

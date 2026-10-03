@@ -1,15 +1,14 @@
 import { useMemo, useState } from 'react'
 import { usePagina } from '../hooks'
 import { useData } from '../data/DataContext'
-import { MESES, TARIFA } from '../data/constants'
-import { clavePeriodo, generacionPeriodo, nombrePeriodo, periodosRecientes, ultimoPeriodo } from '../data/billing'
+import { CHART, MESES, TARIFA } from '../data/constants'
+import { clavePeriodo, generacionPeriodo, leerPeriodo, nombrePeriodo, periodosFacturados } from '../data/billing'
 import type { Factura } from '../data/types'
 import Modal from '../components/ui/Modal'
 import Paginacion from '../components/ui/Paginacion'
 import StatTile from '../components/ui/StatTile'
 import QrFalso from '../components/QrFalso'
 import { ColumnChart } from '../components/charts/charts'
-import { CHART } from '../data/constants'
 import { formatCutoff, getNextCutoff, getGenerationDate } from '../utils/cutoff'
 import { cop, copCompacto, fecha, fechaCorta, pct } from '../utils/format'
 import { exportarXls } from '../utils/excel'
@@ -19,8 +18,8 @@ const POR_PAGINA = 12
 
 export default function Facturacion() {
   const { facturas, usuarios } = useData()
-  const periodos = useMemo(() => periodosRecientes(12).reverse(), [])
-  const ult = ultimoPeriodo()
+  const periodos = useMemo(() => periodosFacturados(usuarios, 12).reverse(), [usuarios])
+  const ult = periodos[0]
   const [search, setSearch] = useState('')
   const [estado, setEstado] = useState<'Todos' | 'Pagada' | 'Pendiente' | 'Vencida'>('Todos')
   const [periodo, setPeriodo] = useState(`${ult.anio}-${ult.mes}`)
@@ -32,8 +31,8 @@ export default function Facturacion() {
 
   const delPeriodo = useMemo(() => {
     if (periodo === 'Todos') return facturas
-    const [a, m] = periodo.split('-').map(Number)
-    return facturas.filter((f) => f.anio === a && f.mes === m)
+    const { anio, mes } = leerPeriodo(periodo)
+    return facturas.filter((f) => f.anio === anio && f.mes === mes)
   }, [facturas, periodo])
 
   const filtradas = useMemo(() => {
@@ -55,7 +54,7 @@ export default function Facturacion() {
   const pend = delPeriodo.filter((f) => f.estado === 'Pendiente')
   const totalPaginas = Math.max(1, Math.ceil(filtradas.length / POR_PAGINA))
   const pag = Math.min(pagina, totalPaginas)
-  const etiqueta = periodo === 'Todos' ? 'Últimos 12 meses' : (() => { const [a, m] = periodo.split('-').map(Number); return nombrePeriodo(m, a) })()
+  const etiqueta = periodo === 'Todos' ? 'Últimos 12 meses' : (() => { const { anio, mes } = leerPeriodo(periodo); return nombrePeriodo(mes, anio) })()
 
   const exportar = () =>
     exportarXls(

@@ -1,32 +1,40 @@
-# React + TypeScript + Vite
+# EMCAGUA APC — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Portal interno de gestión para EMCAGUA APC (El Carmen y Guamalito, Norte de Santander).
 
-Currently, two official plugins are available:
+## Tecnologías
+React 19 · TypeScript · Vite · Tailwind CSS 4 · React Router 7
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+## Ejecutar
+```bash
+npm install
+npm run dev      # http://localhost:3000
+npm run build    # compila a dist/
+npm run lint     # oxlint
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Modo demostración: cualquier usuario y contraseña. Con el usuario `admin` se habilita el módulo de Nómina.
+
+## Módulos
+| Ruta | Módulo |
+|---|---|
+| `/dashboard` | Panel de control |
+| `/analitica` | Analítica de consumo, facturación y cartera |
+| `/usuarios` | Suscriptores, cortes y reactivaciones |
+| `/facturacion` | Facturas por periodo |
+| `/pagos` | Cobro en caja, recibos y cierre de caja |
+| `/nomina` | Nómina, prestaciones y análisis (solo admin) |
+
+## Estructura
+```
+src/
+  components/   UI reutilizable (charts, modales, layout)
+  data/         Modelos, reglas de negocio y datos de demostración
+    DataContext.tsx    usuarios, facturas y pagos  ← aquí se conecta la API
+    NominaContext.tsx  nómina                      ← aquí se conecta la API
+  pages/        Pantallas
+  utils/        Formatos, fechas de corte, Excel, sesión, WhatsApp
+```
+
+Los datos actuales son de demostración (en memoria). Para conectar el backend solo hay que
+reemplazar los `useState` de los contextos en `src/data/` por llamadas a la API.

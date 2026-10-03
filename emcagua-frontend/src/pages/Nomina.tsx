@@ -1,9 +1,10 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { useNomina, type EstadoNomina } from '../data/NominaContext'
-import { ARL_TARIFA, NOVEDAD_VACIA, calendarioObligaciones, horaExtraDiurnaMinima, liquidar, prestaciones, revisar, type Empleado, type Liquidacion, type Novedad, type Parametros } from '../data/nomina'
+import { claveNomina, useNomina, type EstadoNomina } from '../data/NominaContext'
+import { ARL_CLASES, ARL_TARIFA, NOVEDAD_VACIA, calendarioObligaciones, horaExtraDiurnaMinima, liquidar, prestaciones, revisar, type Empleado, type Liquidacion, type Novedad, type Parametros } from '../data/nomina'
 import { MESES } from '../data/constants'
 import Modal, { ConfirmDialog } from '../components/ui/Modal'
 import Avatar from '../components/ui/Avatar'
+import Ico from '../components/ui/Icon'
 import StatTile from '../components/ui/StatTile'
 import { useToast } from '../components/ui/Toast'
 import { cop, copCompacto, fecha, hora, num } from '../utils/format'
@@ -12,9 +13,6 @@ import NominaAnalisis from './NominaAnalisis'
 
 type Tab = 'liquidacion' | 'analisis' | 'prestaciones' | 'empleados' | 'parametros'
 
-const Ico = ({ d, className = 'w-4 h-4' }: { d: string; className?: string }) => (
-  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d={d} /></svg>
-)
 const D = {
   lock: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z',
   check: 'M5 13l4 4L19 7',
@@ -40,7 +38,7 @@ export default function Nomina() {
   const toast = useToast()
   const hoy = new Date()
   const [tab, setTab] = useState<Tab>('liquidacion')
-  const [clave, setClave] = useState(`${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`)
+  const [clave, setClave] = useState(claveNomina(hoy.getFullYear(), hoy.getMonth() + 1))
   const [anio, mes] = clave.split('-').map(Number)
   const periodo = obtenerPeriodo(anio, mes)
   const editable = periodo.estado === 'Borrador'
@@ -51,7 +49,7 @@ export default function Nomina() {
 
   const opcionesPeriodo = useMemo(() => {
     const set = new Set(Object.keys(periodos))
-    set.add(`${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`)
+    set.add(claveNomina(hoy.getFullYear(), hoy.getMonth() + 1))
     return [...set].sort().reverse()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [periodos])
@@ -63,7 +61,7 @@ export default function Nomina() {
 
   const anterior = useMemo(() => {
     const d = new Date(anio, mes - 2, 1)
-    const p = periodos[`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`]
+    const p = periodos[claveNomina(d.getFullYear(), d.getMonth() + 1)]
     if (!p) return undefined
     return new Map(empleados.filter((e) => p.novedades[e.id]).map((e) => [e.id, liquidar(e, p.novedades[e.id], parametros).neto]))
   }, [periodos, anio, mes, empleados, parametros])
@@ -259,6 +257,7 @@ export default function Nomina() {
                 ['ICBF 3%', sum((l) => l.empleador.icbf)],
                 ['SENA 2%', sum((l) => l.empleador.sena)],
               ]} total={tot.empleador} />
+              <ArlBoton className="mt-3" />
             </section>
             <section className="card p-5">
               <h3 className="text-[15px] font-bold text-dark">Provisiones del mes</h3>
@@ -698,7 +697,14 @@ function TabEmpleados() {
   const nuevo = (): Empleado => ({ id: `E${String(empleados.length + 1).padStart(2, '0')}`, nombre: '', cedula: '', cargo: '', area: 'Operativa', salario: parametros.smmlv, fechaIngreso: new Date().toISOString().slice(0, 10), contrato: 'Indefinido', riesgoArl: 1, eps: '', pension: '', diasVacacionesDisfrutados: 0, activo: true })
   return (
     <>
-      <div className="flex justify-end mb-4"><button onClick={() => setEdit(nuevo())} className="btn-primary"><Ico d={D.plus} /> Nuevo empleado</button></div>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-3 rounded-2xl border border-secondary/15 bg-secondary/5 px-4 py-2.5 text-sm text-gray-600">
+          <span className="h-8 w-8 rounded-lg bg-secondary/10 text-secondary flex items-center justify-center shrink-0"><Ico d={D.shield} /></span>
+          <span>Cada empleado tiene una <b className="text-dark">clase de riesgo ARL</b> según sus funciones. La paga 100% la empresa.</span>
+          <ArlBoton />
+        </div>
+        <button onClick={() => setEdit(nuevo())} className="btn-primary shrink-0"><Ico d={D.plus} /> Nuevo empleado</button>
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
         {empleados.map((e) => (
           <div key={e.id} className={`card p-4 ${e.activo ? '' : 'opacity-60'}`}>
@@ -714,7 +720,7 @@ function TabEmpleados() {
               <Dato k="Salario" v={cop(e.salario)} />
               <Dato k="Ingreso" v={fecha(new Date(e.fechaIngreso + 'T00:00:00'))} />
               <Dato k="Contrato" v={e.contrato} />
-              <Dato k="ARL" v={`Riesgo ${e.riesgoArl} · ${(ARL_TARIFA[e.riesgoArl] * 100).toFixed(3)}%`} />
+              <Dato k="Riesgo ARL" v={<span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: ARL_CLASES[e.riesgoArl - 1].color }} />Clase {e.riesgoArl} · {ARL_CLASES[e.riesgoArl - 1].nivel}</span>} />
             </div>
             {!e.activo && <span className="badge-muted mt-3">Inactivo</span>}
           </div>
@@ -756,18 +762,19 @@ function EmpleadoModal({ e, onClose, onSave }: { e: Empleado; onClose: () => voi
           <select value={f.contrato} onChange={(ev) => setF({ ...f, contrato: ev.target.value as Empleado['contrato'] })} className="field"><option>Indefinido</option><option>Término fijo</option></select>
         </div>
         <div>
-          <label className="field-label">Riesgo ARL</label>
-          <select value={f.riesgoArl} onChange={(ev) => setF({ ...f, riesgoArl: Number(ev.target.value) as Empleado['riesgoArl'] })} className="field">
-            {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>Clase {n} · {(ARL_TARIFA[n] * 100).toFixed(3)}%</option>)}
-          </select>
-        </div>
-        <div>
           <label className="field-label">Área</label>
           <select value={f.area} onChange={(ev) => setF({ ...f, area: ev.target.value as Empleado['area'] })} className="field"><option>Administrativa</option><option>Operativa</option></select>
         </div>
         <div>
           <label className="field-label" htmlFor="e-vac">Días de vacaciones disfrutados</label>
           <input id="e-vac" inputMode="numeric" value={f.diasVacacionesDisfrutados} onChange={(ev) => setF({ ...f, diasVacacionesDisfrutados: Number(ev.target.value.replace(/\D/g, '')) || 0 })} className="field" />
+        </div>
+        <div className="col-span-2">
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="field-label !mb-0">Clase de riesgo ARL</p>
+            <ArlBoton />
+          </div>
+          <ArlSelector value={f.riesgoArl} salario={f.salario} onChange={(c) => setF({ ...f, riesgoArl: c })} />
         </div>
         {txt('eps', 'EPS')}
         {txt('pension', 'Fondo de pensión')}
@@ -859,5 +866,108 @@ function TabParametros() {
         </ul>
       </section>
     </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Ayuda: riesgo ARL                                                   */
+/* ------------------------------------------------------------------ */
+
+function ArlSelector({ value, salario, onChange }: { value: Empleado['riesgoArl']; salario: number; onChange: (c: Empleado['riesgoArl']) => void }) {
+  return (
+    <div className="rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+      {ARL_CLASES.map((c) => {
+        const on = value === c.clase
+        return (
+          <button type="button" key={c.clase} onClick={() => onChange(c.clase)} className={`w-full flex items-start gap-3 px-3 py-2.5 text-left transition-colors ${on ? 'bg-secondary/5' : 'hover:bg-gray-soft'}`}>
+            <span className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center ${on ? 'border-secondary' : 'border-gray-300'}`}>{on && <span className="h-2 w-2 rounded-full bg-secondary" />}</span>
+            <span className="flex-1 min-w-0">
+              <span className="flex items-center gap-2 text-sm font-semibold text-dark">
+                <span className="h-2 w-2 rounded-full" style={{ background: c.color }} />
+                Clase {c.clase} · {c.nivel}
+                <span className="text-xs font-normal text-gray-400">{(ARL_TARIFA[c.clase] * 100).toFixed(3).replace('.', ',')}%</span>
+              </span>
+              <span className="block text-xs text-gray-500 mt-0.5">{c.ejemplos}</span>
+            </span>
+            <span className="text-right shrink-0">
+              <span className="block text-sm font-bold text-dark tabular-nums">{cop(salario * ARL_TARIFA[c.clase])}</span>
+              <span className="block text-[10px] text-gray-400">al mes</span>
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function ArlBoton({ className = '' }: { className?: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} className={`inline-flex items-center gap-1 text-xs font-semibold text-secondary hover:underline whitespace-nowrap ${className}`}>
+        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        ¿Qué es el riesgo ARL?
+      </button>
+      {open && <ArlAyuda onClose={() => setOpen(false)} />}
+    </>
+  )
+}
+
+function ArlAyuda({ onClose }: { onClose: () => void }) {
+  const { empleados } = useNomina()
+  const activos = empleados.filter((e) => e.activo)
+  return (
+    <Modal open onClose={onClose} size="lg" title="¿Qué es el riesgo ARL?" subtitle="Guía rápida para clasificar a los empleados" footer={<button onClick={onClose} className="btn-primary flex-1">Entendido</button>}>
+      <div className="px-6 py-5 space-y-5 text-sm text-gray-600">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {[
+            ['Qué es', 'La ARL (Administradora de Riesgos Laborales) cubre accidentes de trabajo y enfermedades laborales: atención médica, incapacidades e indemnizaciones.'],
+            ['Quién la paga', 'El 100% lo paga la empresa. Al trabajador no se le descuenta nada de su salario.'],
+            ['Cómo se calcula', 'Salario (IBC) × la tarifa de la clase de riesgo del trabajador. Entre más peligroso el trabajo, más alta la tarifa.'],
+          ].map(([t, d]) => (
+            <div key={t} className="rounded-xl bg-gray-soft p-3">
+              <p className="text-xs font-bold text-dark">{t}</p>
+              <p className="text-xs mt-1 leading-relaxed">{d}</p>
+            </div>
+          ))}
+        </div>
+
+        <div>
+          <p className="text-sm font-bold text-dark mb-2">Las 5 clases de riesgo</p>
+          <div className="rounded-xl border border-gray-100 overflow-hidden">
+            <table className="w-full text-xs">
+              <thead className="bg-gray-soft">
+                <tr>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-500">Clase</th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-500">Tarifa</th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-500">Ejemplos en EMCAGUA</th>
+                  <th className="text-right px-3 py-2 font-semibold text-gray-500">Empleados</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {ARL_CLASES.map((c) => (
+                  <tr key={c.clase}>
+                    <td className="px-3 py-2.5 whitespace-nowrap"><span className="inline-flex items-center gap-1.5 font-semibold text-dark"><span className="h-2 w-2 rounded-full" style={{ background: c.color }} />{c.clase} · {c.nivel}</span></td>
+                    <td className="px-3 py-2.5 tabular-nums font-semibold text-dark">{(ARL_TARIFA[c.clase] * 100).toFixed(3).replace('.', ',')}%</td>
+                    <td className="px-3 py-2.5">{c.ejemplos}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">{activos.filter((e) => e.riesgoArl === c.clase).length}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-secondary/15 bg-secondary/5 p-3">
+          <p className="text-xs font-bold text-dark">Ejemplo</p>
+          <p className="text-xs mt-1">Un fontanero que gana $1.950.000 está en clase IV: la empresa paga $1.950.000 × 4,35% = <b className="text-dark">$84.825 al mes</b> a la ARL.</p>
+        </div>
+
+        <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3 flex gap-2.5">
+          <Ico d={D.warn} className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <p className="text-xs text-amber-900">La clase <b>no la escoge libremente la empresa</b>: la define la ARL según la actividad económica y las funciones reales del cargo. Afiliar a alguien en una clase más baja para pagar menos puede dejarlo sin cobertura en un accidente. Confirma la clase de cada cargo con el contador o la ARL de EMCAGUA.</p>
+        </div>
+      </div>
+    </Modal>
   )
 }

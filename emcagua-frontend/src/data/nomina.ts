@@ -46,6 +46,15 @@ export const PARAMETROS_2026: Parametros = {
 
 export const ARL_TARIFA: Record<number, number> = { 1: 0.00522, 2: 0.01044, 3: 0.02436, 4: 0.0435, 5: 0.0696 }
 
+/** Guía de clases de riesgo ARL (Decreto 1295 de 1994 / Decreto 1772 de 1994). Ejemplos orientativos para EMCAGUA. */
+export const ARL_CLASES: { clase: 1 | 2 | 3 | 4 | 5; nivel: string; ejemplos: string; color: string }[] = [
+  { clase: 1, nivel: 'Mínimo', ejemplos: 'Trabajo de oficina: gerencia, contabilidad, secretaría, caja', color: '#16a34a' },
+  { clase: 2, nivel: 'Bajo', ejemplos: 'Trabajo en la calle sin herramientas peligrosas: lectura de medidores, mensajería', color: '#65a30d' },
+  { clase: 3, nivel: 'Medio', ejemplos: 'Planta de tratamiento: manejo de cloro y químicos, bombas y maquinaria', color: '#ca8a04' },
+  { clase: 4, nivel: 'Alto', ejemplos: 'Fontanería, redes de acueducto y alcantarillado, excavaciones, vigilancia nocturna', color: '#ea580c' },
+  { clase: 5, nivel: 'Máximo', ejemplos: 'Trabajo en alturas extremas, espacios confinados permanentes, explosivos', color: '#dc2626' },
+]
+
 export type Empleado = {
   id: string
   nombre: string

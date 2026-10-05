@@ -1,3 +1,5 @@
+import { buscarCuenta, rolDe } from '../data/cuentas'
+
 const KEY = 'emcagua_user'
 
 export function getUsername(fallback = 'Trabajador'): string {
@@ -25,7 +27,18 @@ export function logout() {
   localStorage.removeItem(KEY)
 }
 
-/** Modo demo: solo el usuario "admin" tiene rol de administrador. */
+/** Cuenta del funcionario que inició sesión (o undefined si no existe o está inactiva). */
+export function cuentaActual() {
+  const c = buscarCuenta(getUsername(''))
+  return c?.activo ? c : undefined
+}
+
+/** ¿El rol del funcionario permite ver este módulo? (id = ruta sin "/") */
+export function puede(modulo: string) {
+  return !!rolDe(cuentaActual())?.permisos.includes(modulo)
+}
+
+/** Administrador = rol con acceso total (Gerente). */
 export function isAdmin() {
-  return getUsername('').trim().toLowerCase() === 'admin'
+  return !!rolDe(cuentaActual())?.fijo
 }

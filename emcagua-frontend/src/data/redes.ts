@@ -4,6 +4,7 @@
  */
 import { vencimientoPeriodo } from './billing'
 import { MESES } from './constants'
+import { cfg } from './config'
 
 export type Formato = { id: string; nombre: string; uso: string; w: number; h: number }
 export const FORMATOS: Formato[] = [
@@ -124,7 +125,7 @@ export const TIPOS: TipoPieza[] = [
     id: 'aviso', ilustracion: 'megafono', nombre: 'Aviso general', descripcion: 'Horarios, nuevos servicios, información a la comunidad.', icono: ICONOS.megafono, tema: VERDE,
     base: () => ({
       etiqueta: 'INFORMACIÓN', titular: 'Nuevo horario de atención', subtitulo: 'Te atendemos en nuestras oficinas',
-      detalles: [{ icono: 'hora', texto: 'Lunes a viernes, 8:00 a. m. a 12:00 m. y 2:00 a 6:00 p. m.' }, { icono: 'lugar', texto: 'El Carmen, Norte de Santander' }],
+      detalles: [{ icono: 'hora', texto: cfg().horario }, { icono: 'lugar', texto: cfg().direccion || cfg().ciudad }],
       mensaje: '', cta: '¡Te esperamos!',
       caption: '📢 Conoce nuestro horario de atención. ¡Te esperamos! #EMCAGUA',
     }),

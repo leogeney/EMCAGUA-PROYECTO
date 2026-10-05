@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { usePagina } from '../hooks'
 import { useData } from '../data/DataContext'
-import { CHART, MESES, TARIFA } from '../data/constants'
+import { CHART, MESES } from '../data/constants'
+import { valorPeriodo } from '../data/tarifa'
 import { clavePeriodo, generacionPeriodo, leerPeriodo, nombrePeriodo, periodosFacturados } from '../data/billing'
 import type { Factura } from '../data/types'
 import Modal from '../components/ui/Modal'
@@ -231,7 +232,9 @@ function DetalleFactura({ factura: f, onClose }: { factura: Factura; onClose: ()
         <div className="mt-4 rounded-xl border border-gray-100 divide-y divide-gray-100 text-sm">
           <div className="flex justify-between px-4 py-2.5"><span className="text-gray-500">Consumo del periodo</span><span className="font-semibold tabular-nums">{f.consumo} m³ · {(f.consumo * 1000).toLocaleString('es-CO')} L</span></div>
           {anterior && <div className="flex justify-between px-4 py-2.5"><span className="text-gray-500">Consumo periodo anterior</span><span className="tabular-nums text-gray-600">{anterior.consumo} m³</span></div>}
-          <div className="flex justify-between px-4 py-2.5"><span className="text-gray-500">Tarifa estrato {f.estrato}</span><span className="tabular-nums text-gray-600">{cop(TARIFA[f.estrato])} / m³</span></div>
+          {valorPeriodo(f.consumo, f.estrato, f.mes, f.anio).lineas.filter((l) => l.tipo !== 'total').map((l) => (
+            <div key={l.concepto} className="flex justify-between px-4 py-2"><span className={l.tipo === 'subsidio' ? 'text-green-700' : 'text-gray-500'}>{l.concepto}{l.cantidad && <span className="text-gray-400"> · {l.cantidad}</span>}</span><span className={`tabular-nums ${l.tipo === 'subsidio' ? 'text-green-700 font-semibold' : 'text-gray-600'}`}>{cop(l.valor)}</span></div>
+          ))}
           <div className="flex justify-between px-4 py-3 bg-dark text-white rounded-b-xl"><span className="font-semibold">Total a pagar</span><span className="text-lg font-extrabold tabular-nums">{cop(f.monto)} <span className="text-xs font-normal text-white/60">COP</span></span></div>
         </div>
 

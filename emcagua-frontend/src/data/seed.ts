@@ -139,7 +139,7 @@ export function crearDatosDemo(hoy = new Date()): { usuarios: Usuario[]; pagos: 
       u.historial
         .filter((p) => p.estado === 'Pagada' && p.fechaPago && p.anio * 12 + p.mes >= desde.anio * 12 + desde.mes)
         .map((p) => {
-          const monto = montoPeriodo(p.consumo, u.estrato)
+          const monto = montoPeriodo(p.consumo, u.estrato, p.mes, p.anio)
           const efectivo = rnd() < 0.65
           const recibido = efectivo ? Math.ceil(monto / 10000) * 10000 : undefined
           return {
@@ -150,6 +150,7 @@ export function crearDatosDemo(hoy = new Date()): { usuarios: Usuario[]; pagos: 
             concepto: `Factura ${nombrePeriodo(p.mes, p.anio)}`,
             monto,
             metodo: efectivo ? ('Efectivo' as const) : ('Transferencia' as const),
+            cajero: rnd() < 0.7 ? 'Yaneth Quintero' : 'Diana Carrascal',
             recibido,
             vueltos: recibido !== undefined ? recibido - monto : undefined,
             timestamp: p.fechaPago!,

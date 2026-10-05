@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useData } from '../data/DataContext'
 import type { Factura, Pago } from '../data/types'
 import PagoDialog from '../components/PagoDialog'
@@ -9,9 +10,11 @@ import QrFalso from '../components/QrFalso'
 import { useToast } from '../components/ui/Toast'
 import { cop, copCompacto, fecha, fechaCorta, hora, mismoDia } from '../utils/format'
 import { exportarXls } from '../utils/excel'
-import { getUsername } from '../utils/session'
+import { getUsername, puede } from '../utils/session'
+import { CajaDia, Gastos, ResumenCaja } from './CajaTabs'
 import { usePagina } from '../hooks'
 
+type Tab = 'cobrar' | 'caja' | 'gastos' | 'mes'
 const POR_PAGINA = 10
 const SIETE_DIAS = 7 * 86_400_000
 
@@ -22,7 +25,10 @@ export default function Pagos() {
   const [filtroHist, setFiltroHist] = useState('')
   const [cobrando, setCobrando] = useState<Factura | null>(null)
   const [recibo, setRecibo] = useState<Pago | null>(null)
-  const [showCierre, setShowCierre] = useState(false)
+  const [params, setParams] = useSearchParams()
+  const admin = puede('gastos')
+  const tab = (['cobrar', 'caja', 'gastos', 'mes'].includes(params.get('tab') ?? '') ? params.get('tab') : 'cobrar') as Tab
+  const setTab = (t: Tab) => setParams(t === 'cobrar' ? {} : { tab: t }, { replace: true })
   const [ahora, setAhora] = useState(() => new Date())
 
   useEffect(() => {
@@ -30,7 +36,6 @@ export default function Pagos() {
     return () => clearInterval(id)
   }, [])
 
-  const cierrePermitido = ahora.getHours() >= 17 || ahora.getHours() < 7
   const pagosHoy = useMemo(() => pagos.filter((p) => mismoDia(p.timestamp, ahora)), [pagos, ahora])
   const cajaHoy = pagosHoy.reduce((s, p) => s + p.monto, 0)
   const cajaSemana = useMemo(() => pagos.filter((p) => ahora.getTime() - p.timestamp < SIETE_DIAS).reduce((s, p) => s + p.monto, 0), [pagos, ahora])
@@ -74,19 +79,16 @@ export default function Pagos() {
       <div className="mb-6 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-dark">Pagos y caja</h1>
-          <p className="text-sm text-gray-500 mt-1">Cobro de facturas, recibos y cierre de caja diario</p>
+          <p className="text-sm text-gray-500 mt-1">Cobro de facturas, arqueo y cierre de caja{admin ? ', gastos y resumen para el contador' : ''}.</p>
         </div>
-        <div className="flex flex-col sm:items-end gap-1">
-          <button onClick={() => setShowCierre(true)} disabled={!cierrePermitido} className="btn bg-dark text-white hover:bg-black" title={cierrePermitido ? 'Hacer cierre de caja' : 'Disponible de 5:00 p. m. a 7:00 a. m.'}>
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            Cierre de caja
-          </button>
-          <span className={`text-[11px] ${cierrePermitido ? 'text-green-700' : 'text-gray-400'}`}>
-            {cierrePermitido ? `Disponible ahora · ${hora(ahora)}` : `Se habilita a las 5:00 p. m. · ahora ${hora(ahora)}`}
-          </span>
+        <div className="flex p-1 bg-white border border-gray-100 rounded-xl shadow-sm overflow-x-auto">
+          {([['cobrar', 'Cobrar'], ['caja', 'Caja del día'], ...(admin ? [['gastos', 'Gastos'], ['mes', 'Resumen mensual']] : [])] as [Tab, string][]).map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)} className={`px-3 h-9 rounded-lg text-sm font-semibold whitespace-nowrap ${tab === k ? 'bg-dark text-white' : 'text-gray-500 hover:text-dark'}`}>{l}</button>
+          ))}
         </div>
       </div>
 
+      {tab === 'cobrar' && (<>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
         <StatTile label="Caja de hoy" value={copCompacto(cajaHoy)} sub={`${pagosHoy.length} pagos · ${cop(pagosHoy.filter((p) => p.metodo === 'Efectivo').reduce((s, p) => s + p.monto, 0))} en efectivo`} tone="primary" />
         <StatTile label="Últimos 7 días" value={copCompacto(cajaSemana)} sub={`${pagos.filter((p) => ahora.getTime() - p.timestamp < SIETE_DIAS).length} pagos`} />
@@ -205,6 +207,11 @@ export default function Pagos() {
         <Paginacion pagina={pHist} total={totPagHist} items={historial.length} porPagina={POR_PAGINA} onChange={setPaginaHist} />
       </section>
 
+      </>)}
+      {tab === 'caja' && <CajaDia />}
+      {tab === 'gastos' && admin && <Gastos />}
+      {tab === 'mes' && admin && <ResumenCaja />}
+
       {cobrando && <PagoDialog
         open
         onClose={() => setCobrando(null)}
@@ -214,31 +221,6 @@ export default function Pagos() {
         onConfirm={confirmarCobro}
       />}
 
-      <Modal
-        open={showCierre}
-        onClose={() => setShowCierre(false)}
-        size="sm"
-        title="Cierre de caja"
-        subtitle={ahora.toLocaleString('es-CO')}
-        footer={
-          <>
-            <button onClick={() => setShowCierre(false)} className="btn-secondary flex-1">Cancelar</button>
-            <button onClick={() => { toast('Cierre de caja registrado', `${cop(cajaHoy)} · ${pagosHoy.length} pagos`); setShowCierre(false) }} className="btn flex-1 bg-dark text-white hover:bg-black">Confirmar cierre</button>
-          </>
-        }
-      >
-        <div className="px-6 py-5 space-y-2.5 text-sm">
-          {[
-            ['Pagos de hoy', String(pagosHoy.length)],
-            ['Efectivo', cop(pagosHoy.filter((p) => p.metodo === 'Efectivo').reduce((s, p) => s + p.monto, 0))],
-            ['Transferencias', cop(pagosHoy.filter((p) => p.metodo === 'Transferencia').reduce((s, p) => s + p.monto, 0))],
-          ].map(([k, v]) => (
-            <div key={k} className="flex justify-between"><span className="text-gray-500">{k}</span><span className="font-semibold text-dark tabular-nums">{v}</span></div>
-          ))}
-          <div className="flex justify-between pt-3 mt-1 border-t border-gray-100"><span className="font-bold text-dark">Total del día</span><span className="text-lg font-extrabold text-green-700 tabular-nums">{cop(cajaHoy)}</span></div>
-          <p className="text-[11px] text-gray-400 pt-2">Disponible de 5:00 p. m. a 7:00 a. m. Guarda el arqueo del día.</p>
-        </div>
-      </Modal>
 
       {recibo && <Recibo pago={recibo} onClose={() => setRecibo(null)} />}
     </div>

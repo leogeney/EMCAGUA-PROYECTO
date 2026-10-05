@@ -1,5 +1,10 @@
-export const UMBRAL_ALTO = 30 // m³ por periodo
-export const COSTO_RECONEXION = 30000
+// Parámetros editables en Configuración (live bindings: quien los importa ve el valor actualizado)
+export let UMBRAL_ALTO = 30 // m³ por periodo
+export let COSTO_RECONEXION = 30000
+export function setParametros(p: { umbralAlto: number; reconexion: number }) {
+  UMBRAL_ALTO = p.umbralAlto
+  COSTO_RECONEXION = p.reconexion
+}
 export const TARIFA: Record<number, number> = { 1: 1800, 2: 2600, 3: 3400 } // $ por m³
 export const BARRIOS = ['Centro', 'Guamalito', 'El Carmen', 'La Esperanza'] as const
 export const ESTRATOS = [1, 2, 3] as const

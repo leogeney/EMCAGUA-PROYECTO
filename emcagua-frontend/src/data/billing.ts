@@ -1,5 +1,6 @@
 import { getFirstFriday } from '../utils/cutoff'
-import { MESES, TARIFA } from './constants'
+import { MESES } from './constants'
+import { valorPeriodo } from './tarifa'
 import type { Factura, Periodo, Usuario } from './types'
 
 /** Vence el primer viernes del mes siguiente al periodo consumido. */
@@ -19,7 +20,8 @@ export function generacionPeriodo(mes: number, anio: number): Date {
 
 export const facturaId = (clienteId: string, mes: number, anio: number) => `FAC-${anio}-${String(mes).padStart(2, '0')}-${clienteId}`
 export const nombrePeriodo = (mes: number, anio: number) => `${MESES[mes - 1]} ${anio}`
-export const montoPeriodo = (consumo: number, estrato: number) => consumo * TARIFA[estrato]
+/** Valor facturado de un periodo con la tarifa vigente en ese periodo (simple o CRA con subsidios). */
+export const montoPeriodo = (consumo: number, estrato: number, mes?: number, anio?: number) => valorPeriodo(consumo, estrato, mes, anio).total
 export const clavePeriodo = (mes: number, anio: number) => anio * 12 + (mes - 1)
 
 /** "2026-9" o "2026-09" → { anio: 2026, mes: 9 } */
@@ -80,7 +82,7 @@ export function periodoAFactura(u: Usuario, p: Periodo, hoy = new Date()): Factu
     anio: p.anio,
     periodo: nombrePeriodo(p.mes, p.anio),
     consumo: p.consumo,
-    monto: montoPeriodo(p.consumo, u.estrato),
+    monto: montoPeriodo(p.consumo, u.estrato, p.mes, p.anio),
     vencimiento: venc,
     estado,
     vencida: estado === 'Pendiente' && hoy > venc,

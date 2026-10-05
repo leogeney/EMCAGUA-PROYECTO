@@ -1,12 +1,14 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { COSTO_RECONEXION } from './constants'
-import { facturaId, facturasDe, lecturaMedidor, nombrePeriodo, periodoEnLectura, resumenUsuario, todasLasFacturas, type Resumen } from './billing'
+import { facturaId, facturasDe, generacionPeriodo, lecturaMedidor, nombrePeriodo, periodoEnLectura, resumenUsuario, todasLasFacturas, type Resumen } from './billing'
 import { crearDatosDemo } from './seed'
+import { getUsername } from '../utils/session'
 import { generarTelemetria, lecturaRemota, lecturasRemotas, enLinea, todasLasAlarmas, type AlarmaMedidor, type Telemetria } from './telemetria'
+import { aplicarTarifa as guardarTarifa, quitarTarifa as borrarTarifa, type TarifaCRA } from './tarifa'
 import type { Factura, Lectura, MetodoPago, Pago, Usuario, UsuarioForm } from './types'
 
-export type DatosPago = { metodo: MetodoPago; recibido?: number; comprobante?: string }
+export type DatosPago = { metodo: MetodoPago; recibido?: number; comprobante?: string; cajero?: string }
 
 type DataCtx = {
   usuarios: Usuario[]
@@ -19,6 +21,8 @@ type DataCtx = {
   reactivar: (id: string, pago: DatosPago) => Pago
   pagarFactura: (facturaId: string, pago: DatosPago) => Pago | null
   periodoLectura: { mes: number; anio: number }
+  /** Fecha en que el periodo se cierra y factura solo (14 días antes del vencimiento). */
+  cierrePeriodo: Date
   lecturas: Record<string, Lectura>
   registrarLectura: (usuarioId: string, l: Lectura) => void
   borrarLectura: (usuarioId: string) => void
@@ -28,6 +32,9 @@ type DataCtx = {
   alarmas: AlarmaMedidor[]
   /** Consulta la pasarela y trae las lecturas nuevas. Devuelve cuántas llegaron. */
   sincronizar: () => number
+  /** Aplica una tarifa CRA desde un periodo (no retroactiva) y recalcula todo. */
+  aplicarTarifa: (t: TarifaCRA) => void
+  quitarTarifa: (t: TarifaCRA) => void
 }
 
 const Ctx = createContext<DataCtx | null>(null)
@@ -41,6 +48,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [lecturas, setLecturas] = useState<Record<string, Lectura>>(() => lecturasRemotas(inicial.usuarios, medidores))
   const alarmas = useMemo(() => todasLasAlarmas(usuarios, medidores, lecturas), [usuarios, medidores, lecturas])
   const periodoLectura = useMemo(() => periodoEnLectura(usuarios), [usuarios])
+  const cierrePeriodo = useMemo(() => generacionPeriodo(periodoLectura.mes, periodoLectura.anio), [periodoLectura])
 
   const facturas = useMemo(() => todasLasFacturas(usuarios), [usuarios])
   const resumenes = useMemo(() => new Map(usuarios.map((u) => [u.id, resumenUsuario(u)])), [usuarios])
@@ -52,6 +60,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         ...base,
         id: `PAG-${String(consecutivo).padStart(5, '0')}`,
         vueltos: base.recibido !== undefined ? base.recibido - base.monto : undefined,
+        cajero: base.cajero ?? (base.metodo === 'En línea' ? 'Portal web' : getUsername()),
         timestamp: Date.now(),
       }
       setConsecutivo((n) => n + 1)
@@ -154,9 +163,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return nuevas
   }, [medidores, lecturas, usuarios])
 
+  // Cierre automático mensual: cuando llega la fecha de generación de la factura, el periodo se factura solo.
+  useEffect(() => {
+    const revisar = () => { if (Date.now() >= cierrePeriodo.getTime()) facturarPeriodo() }
+    const t = setTimeout(revisar, 0)
+    const i = setInterval(revisar, 60_000)
+    return () => { clearTimeout(t); clearInterval(i) }
+  }, [cierrePeriodo, facturarPeriodo])
+
+  // Cambiar la tarifa cambia los montos: se crea un arreglo nuevo para que todo se recalcule.
+  const aplicarTarifa = useCallback((t: TarifaCRA) => { guardarTarifa(t); setUsuarios((u) => [...u]) }, [])
+  const quitarTarifa = useCallback((t: TarifaCRA) => { borrarTarifa(t); setUsuarios((u) => [...u]) }, [])
+
   const value = useMemo(
-    () => ({ usuarios, pagos, facturas, resumen, crearUsuario, editarUsuario, cortar, reactivar, pagarFactura, periodoLectura, lecturas, registrarLectura, borrarLectura, facturarPeriodo, medidores, alarmas, sincronizar }),
-    [usuarios, pagos, facturas, resumen, crearUsuario, editarUsuario, cortar, reactivar, pagarFactura, periodoLectura, lecturas, registrarLectura, borrarLectura, facturarPeriodo, medidores, alarmas, sincronizar],
+    () => ({ usuarios, pagos, facturas, resumen, crearUsuario, editarUsuario, cortar, reactivar, pagarFactura, periodoLectura, cierrePeriodo, lecturas, registrarLectura, borrarLectura, facturarPeriodo, medidores, alarmas, sincronizar, aplicarTarifa, quitarTarifa }),
+    [usuarios, pagos, facturas, resumen, crearUsuario, editarUsuario, cortar, reactivar, pagarFactura, periodoLectura, cierrePeriodo, lecturas, registrarLectura, borrarLectura, facturarPeriodo, medidores, alarmas, sincronizar, aplicarTarifa, quitarTarifa],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

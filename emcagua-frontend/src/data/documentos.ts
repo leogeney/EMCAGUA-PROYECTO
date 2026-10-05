@@ -7,6 +7,7 @@ import { lecturaMedidor, nombrePeriodo, type Resumen } from './billing'
 import type { Empleado, Liquidacion } from './nomina'
 import type { Pqr, Usuario } from './types'
 import { cop, num } from '../utils/format'
+import { cfg, lineaContacto } from './config'
 import { crearDocx, firmas, p, pMixto, tabla } from '../utils/docx'
 
 export type Grupo = 'Suscriptores' | 'Cartera y cobro' | 'Nómina y personal' | 'Oficios y comunicaciones'
@@ -62,10 +63,12 @@ export type Plantilla = {
 
 export const GRUPOS: Grupo[] = ['Suscriptores', 'Cartera y cobro', 'Nómina y personal', 'Oficios y comunicaciones']
 
+/** Datos de la empresa: se leen de Configuración cada vez que se usan. */
 export const EMPRESA = {
-  nombre: 'EMCAGUA APC',
-  razon: 'Empresa de Servicios Públicos de El Carmen y Guamalito · Administración Pública Cooperativa',
-  ciudad: 'El Carmen, Norte de Santander',
+  get nombre() { return cfg().nombre },
+  get razon() { return cfg().razon },
+  get ciudad() { return cfg().ciudad },
+  get contacto() { return lineaContacto() },
 }
 
 export const fechaLarga = (d: Date) => `${d.getDate()} de ${MESES[d.getMonth()].toLowerCase()} de ${d.getFullYear()}`
@@ -395,7 +398,7 @@ export async function descargarWord(nombre: string, b: Borrador, consecutivo: st
     logoAncho: 0.62,
     logoAlto: 0.7,
     titulo: EMPRESA.nombre,
-    lineas: [EMPRESA.razon, EMPRESA.ciudad],
+    lineas: [EMPRESA.razon, EMPRESA.ciudad, EMPRESA.contacto].filter(Boolean),
     color: VERDE,
   })
   const url = URL.createObjectURL(blob)

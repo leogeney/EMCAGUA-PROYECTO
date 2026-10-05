@@ -12,7 +12,7 @@ import Ico from '../components/ui/Icon'
 import Modal from '../components/ui/Modal'
 import { useToast } from '../components/ui/Toast'
 import { cop, fecha } from '../utils/format'
-import { isAdmin } from '../utils/session'
+import { puede } from '../utils/session'
 
 const D = {
   back: 'M10 19l-7-7m0 0l7-7m-7 7h18',
@@ -44,7 +44,7 @@ export default function Documentos() {
   const { emitidos } = useDocumentos()
   const [vista, setVista] = useState<Vista>('galeria')
   const [id, setId] = useState('')
-  const admin = isAdmin()
+  const admin = puede('nomina')
   const abrir = (pid: string) => { setId(pid); setVista('editor') }
 
   return (
@@ -297,6 +297,7 @@ function Hoja({ b, consecutivo, fecha: f, formato, atenuado }: { b: Borrador; co
           <p className="text-lg font-extrabold text-secondary leading-none">{EMPRESA.nombre}</p>
           <p className="text-[10.5px] text-gray-500 mt-1">{EMPRESA.razon}</p>
           <p className="text-[10.5px] text-gray-500">{EMPRESA.ciudad}</p>
+          {EMPRESA.contacto && <p className="text-[10.5px] text-gray-500">{EMPRESA.contacto}</p>}
         </div>
       </header>
       <p className="text-right text-[11px] text-gray-500 font-mono mt-3">{consecutivo}</p>

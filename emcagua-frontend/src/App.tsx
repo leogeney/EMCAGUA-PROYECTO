@@ -1,71 +1,68 @@
-import { lazy } from 'react'
+import { lazy, Suspense, type ComponentType, type LazyExoticComponent } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import AppLayout from './components/layout/AppLayout'
 import Login from './pages/Login'
-const Dashboard = lazy(() => import('./pages/Dashboard'))
-const Users = lazy(() => import('./pages/Users'))
-const Facturacion = lazy(() => import('./pages/Facturacion'))
-const Pagos = lazy(() => import('./pages/Pagos'))
-const Lecturas = lazy(() => import('./pages/Lecturas'))
-const PqrPage = lazy(() => import('./pages/Pqr'))
-const Asistente = lazy(() => import('./pages/Asistente'))
-const Reporte = lazy(() => import('./pages/Reporte'))
-const Documentos = lazy(() => import('./pages/Documentos'))
-const Redes = lazy(() => import('./pages/Redes'))
-const Analitica = lazy(() => import('./pages/Analitica'))
-import { isAdmin, isLoggedIn } from './utils/session'
-const Nomina = lazy(() => import('./pages/Nomina'))
+import { MODULOS } from './data/cuentas'
+import { cuentaActual, isLoggedIn, logout, puede } from './utils/session'
+
+const Portal = lazy(() => import('./pages/Portal'))
+
+/** Cada módulo protegido por permiso del rol. La clave es el id del módulo (= ruta). */
+const PAGINAS: Record<string, LazyExoticComponent<ComponentType>> = {
+  'mi-dia': lazy(() => import('./pages/MiDia')),
+  dashboard: lazy(() => import('./pages/Dashboard')),
+  analitica: lazy(() => import('./pages/Analitica')),
+  asistente: lazy(() => import('./pages/Asistente')),
+  reporte: lazy(() => import('./pages/Reporte')),
+  usuarios: lazy(() => import('./pages/Users')),
+  lecturas: lazy(() => import('./pages/Lecturas')),
+  facturacion: lazy(() => import('./pages/Facturacion')),
+  pagos: lazy(() => import('./pages/Pagos')),
+  pqr: lazy(() => import('./pages/Pqr')),
+  perdidas: lazy(() => import('./pages/Perdidas')),
+  inventario: lazy(() => import('./pages/Inventario')),
+  documentos: lazy(() => import('./pages/Documentos')),
+  redes: lazy(() => import('./pages/Redes')),
+  avisos: lazy(() => import('./pages/Avisos')),
+  tarifas: lazy(() => import('./pages/Tarifas')),
+  sui: lazy(() => import('./pages/Sui')),
+  nomina: lazy(() => import('./pages/Nomina')),
+  configuracion: lazy(() => import('./pages/Configuracion')),
+  cuentas: lazy(() => import('./pages/Cuentas')),
+}
+
+/** Primer módulo que el rol puede ver (para redirigir). */
+const inicio = () => `/${MODULOS.find((m) => PAGINAS[m.id] && puede(m.id))?.id ?? 'mi-dia'}`
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const isAuth = isLoggedIn()
-  if (!isAuth) return <Navigate to="/login" replace />
+  if (!isLoggedIn()) return <Navigate to="/login" replace />
+  // La cuenta pudo ser desactivada o borrada: se cierra la sesión
+  if (!cuentaActual()) { logout(); return <Navigate to="/login" replace /> }
   return <>{children}</>
 }
 
-function AdminRoute({ children }: { children: React.ReactNode }) {
-  if (!isAdmin()) return <Navigate to="/dashboard" replace />
+function Permiso({ modulo, children }: { modulo: string; children: React.ReactNode }) {
+  if (!puede(modulo)) return <Navigate to={inicio()} replace />
   return <>{children}</>
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
-  const isAuth = isLoggedIn()
-  if (isAuth) return <Navigate to="/dashboard" replace />
+  if (isLoggedIn() && cuentaActual()) return <Navigate to={inicio()} replace />
   return <>{children}</>
 }
 
 export default function App() {
   return (
     <Routes>
-      <Route
-        path="/login"
-        element={
-          <PublicRoute>
-            <Login />
-          </PublicRoute>
-        }
-      />
-      <Route
-        element={
-          <ProtectedRoute>
-            <AppLayout />
-          </ProtectedRoute>
-        }
-      >
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/usuarios" element={<Users />} />
-        <Route path="/facturacion" element={<Facturacion />} />
-        <Route path="/pagos" element={<Pagos />} />
-        <Route path="/analitica" element={<Analitica />} />
-        <Route path="/nomina" element={<AdminRoute><Nomina /></AdminRoute>} />
-        <Route path="/pqr" element={<PqrPage />} />
-        <Route path="/lecturas" element={<Lecturas />} />
-        <Route path="/asistente" element={<Asistente />} />
-        <Route path="/reporte" element={<Reporte />} />
-        <Route path="/documentos" element={<Documentos />} />
-        <Route path="/redes" element={<Redes />} />
+      <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+      <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
+        {Object.entries(PAGINAS).map(([id, Pagina]) => (
+          <Route key={id} path={`/${id}`} element={<Permiso modulo={id}><Pagina /></Permiso>} />
+        ))}
+        <Route path="/caja" element={<Navigate to="/pagos?tab=caja" replace />} />
       </Route>
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/portal" element={<Suspense fallback={null}><Portal /></Suspense>} />
+      <Route path="*" element={<Navigate to="/mi-dia" replace />} />
     </Routes>
   )
 }

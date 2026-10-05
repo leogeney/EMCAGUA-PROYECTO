@@ -9,35 +9,50 @@ import { resumenUsuario } from './billing'
 import { diasHabilesRestantes } from './pqr'
 import type { Lectura, Pago, Pqr, Usuario } from './types'
 import { ALARMAS, type AlarmaMedidor } from './telemetria'
+import { estadoStock, type Material } from './operacion'
+import { balanceHidrico, IANC_META } from './perdidas'
 import { cop, num, pct } from '../utils/format'
 
-export type Mensaje = { rol: 'usuario' | 'asistente'; texto: string; fuente?: 'ollama' | 'reglas' }
+export type Mensaje = { rol: 'usuario' | 'asistente'; texto: string; fuente?: 'ollama' | 'reglas'; pregunta?: string; escribiendo?: boolean }
 
-export type Contexto = { usuarios: Usuario[]; pagos: Pago[]; pqrs: Pqr[]; lecturas: Record<string, Lectura>; alarmas: AlarmaMedidor[] }
+export type Contexto = { usuarios: Usuario[]; pagos: Pago[]; pqrs: Pqr[]; lecturas: Record<string, Lectura>; alarmas: AlarmaMedidor[]; materiales?: Material[] }
 
-/** Resumen compacto (texto) que se le entrega al modelo como contexto. */
-export function resumenParaModelo({ usuarios, pagos, pqrs, lecturas, alarmas }: Contexto) {
-  const serie = serieMensual(usuarios, 12)
+const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+
+/**
+ * Contexto para el modelo. Para que responda rápido solo se envían las secciones
+ * que tienen que ver con la pregunta (menos texto = menos tiempo de lectura del modelo).
+ */
+export function resumenParaModelo({ usuarios, pagos, pqrs, lecturas, alarmas }: Contexto, pregunta = '') {
+  const q = norm(pregunta)
+  const todo = !q || /resumen|gerencia|informe|general|como va/.test(q)
+  const quiere = (re: RegExp) => todo || re.test(q)
+  const serie = serieMensual(usuarios, 6)
   const morosos = usuarios.map((u) => ({ u, r: resumenUsuario(u) })).filter((x) => x.r.vencido).sort((a, b) => b.r.deuda - a.r.deuda)
   const atipicos = consumosAtipicos(usuarios)
   const cartera = edadCartera(usuarios)
   const abiertas = pqrs.filter((p) => p.estado === 'Radicada' || p.estado === 'En trámite')
   const hoy = new Date()
-  return [
+  const secciones: (string | false)[] = [
     `FECHA: ${hoy.toLocaleDateString('es-CO')}. EMPRESA: EMCAGUA APC, acueducto y alcantarillado de El Carmen y Guamalito (Norte de Santander).`,
     `SUSCRIPTORES: ${usuarios.length} (${usuarios.filter((u) => u.estado === 'Activo').length} activos, ${usuarios.filter((u) => u.estado === 'Cortado').length} cortados). Barrios: ${BARRIOS.join(', ')}.`,
-    `SERIE MENSUAL (periodo: consumo m³ | facturado | recaudado | pendiente):`,
-    ...serie.map((p) => `- ${p.full}: ${num(p.consumo)} m³ | ${cop(p.facturado)} | ${cop(p.recaudado)} | ${cop(p.pendiente)}`),
-    `POR BARRIO (consumo promedio último periodo, usuarios, en mora, cartera):`,
-    ...porBarrio(usuarios).map((b) => `- ${b.barrio}: ${num(b.consumoPromedio, 1)} m³, ${b.usuarios} usuarios, ${b.morosos} en mora, ${cop(b.cartera)}`),
-    `CARTERA POR EDAD: ${cartera.map((t) => `${t.label} ${cop(t.monto)} (${t.facturas} fact.)`).join('; ')}.`,
-    `USUARIOS EN MORA (top 10): ${morosos.slice(0, 10).map((x) => `${x.u.nombre} [${x.u.id}, ${x.u.barrio}, ${x.u.estado}] debe ${cop(x.r.deuda)}`).join('; ') || 'ninguno'}.`,
-    `CONSUMOS ATÍPICOS (posibles fugas): ${atipicos.slice(0, 8).map((a) => `${a.usuario.nombre} ${a.actual} m³ vs prom ${num(a.promedio, 1)}`).join('; ') || 'ninguno'}. Umbral de consumo alto: ${UMBRAL_ALTO} m³.`,
-    `PAGOS: ${pagos.length} registrados; últimos 7 días ${cop(pagos.filter((p) => hoy.getTime() - p.timestamp < 7 * 864e5).reduce((s, p) => s + p.monto, 0))}.`,
-    `PQR: ${pqrs.length} en total, ${abiertas.length} abiertas, ${abiertas.filter((p) => diasHabilesRestantes(p.vence) < 0).length} vencidas. Por categoría: ${Object.entries(pqrs.reduce<Record<string, number>>((a, p) => ((a[p.categoria] = (a[p.categoria] ?? 0) + 1), a), {})).map(([k, v]) => `${k} ${v}`).join(', ')}.`,
-    `MEDIDORES INTELIGENTES (lectura automática por telemetría): ${Object.keys(lecturas).length} lecturas recibidas de ${usuarios.filter((u) => u.estado === 'Activo').length} medidores activos.`,
-    `ALARMAS DE MEDIDORES: ${alarmas.map((a) => `${ALARMAS[a.tipo].label} - ${a.usuario.nombre} (${a.usuario.barrio}, ${a.usuario.medidor}): ${a.detalle}`).join('; ') || 'ninguna'}.`,
-  ].join('\n')
+    quiere(/factur|recaud|cobr|pag|mes|consum|ingres|plata|dinero/) && [`SERIE MENSUAL (periodo: consumo m³ | facturado | recaudado | pendiente):`, ...serie.map((p) => `- ${p.full}: ${num(p.consumo)} m³ | ${cop(p.facturado)} | ${cop(p.recaudado)} | ${cop(p.pendiente)}`)].join('\n'),
+    quiere(/barrio|sector|consum|mora|cartera|centro|guamalito|carmen|esperanza/) && [`POR BARRIO (consumo promedio último periodo, usuarios, en mora, cartera):`, ...porBarrio(usuarios).map((b) => `- ${b.barrio}: ${num(b.consumoPromedio, 1)} m³, ${b.usuarios} usuarios, ${b.morosos} en mora, ${cop(b.cartera)}`)].join('\n'),
+    quiere(/cartera|mora|deb|deud|vencid|cort/) && `CARTERA POR EDAD: ${cartera.map((t) => `${t.label} ${cop(t.monto)} (${t.facturas} fact.)`).join('; ')}.`,
+    quiere(/mora|deb|deud|cort|quien|usuario/) && `USUARIOS EN MORA (top 10): ${morosos.slice(0, 10).map((x) => `${x.u.nombre} [${x.u.id}, ${x.u.barrio}, ${x.u.estado}] debe ${cop(x.r.deuda)}`).join('; ') || 'ninguno'}.`,
+    quiere(/fuga|atipic|consum|alto|perd/) && `CONSUMOS ATÍPICOS (posibles fugas): ${atipicos.slice(0, 8).map((a) => `${a.usuario.nombre} ${a.actual} m³ vs prom ${num(a.promedio, 1)}`).join('; ') || 'ninguno'}. Umbral de consumo alto: ${UMBRAL_ALTO} m³.`,
+    quiere(/pag|recaud|hoy|semana|caja/) && `PAGOS: ${pagos.length} registrados; últimos 7 días ${cop(pagos.filter((p) => hoy.getTime() - p.timestamp < 7 * 864e5).reduce((s, p) => s + p.monto, 0))}.`,
+    quiere(/pqr|queja|reclam|petici|usuario|atencion/) && `PQR: ${pqrs.length} en total, ${abiertas.length} abiertas, ${abiertas.filter((p) => diasHabilesRestantes(p.vence) < 0).length} vencidas. Por categoría: ${Object.entries(pqrs.reduce<Record<string, number>>((a, p) => ((a[p.categoria] = (a[p.categoria] ?? 0) + 1), a), {})).map(([k, v]) => `${k} ${v}`).join(', ')}.`,
+    quiere(/medidor|lectur|alarma|fuga|telemetr/) && `MEDIDORES INTELIGENTES: ${Object.keys(lecturas).length} lecturas recibidas de ${usuarios.filter((u) => u.estado === 'Activo').length} medidores activos.`,
+    quiere(/medidor|alarma|fuga|manipul|comunica/) && `ALARMAS DE MEDIDORES: ${alarmas.map((a) => `${ALARMAS[a.tipo].label} - ${a.usuario.nombre} (${a.usuario.barrio}): ${a.detalle}`).join('; ') || 'ninguna'}.`,
+  ]
+  const lineas = secciones.filter(Boolean) as string[]
+  // Pregunta abierta sin tema claro: un resumen corto de todo en vez del detalle completo
+  if (lineas.length === 2) {
+    const u = serie[serie.length - 1]
+    lineas.push(`RESUMEN: ${u ? `${u.full} facturado ${cop(u.facturado)}, recaudado ${cop(u.recaudado)}, consumo ${num(u.consumo)} m³. ` : ''}${morosos.length} usuarios en mora por ${cop(morosos.reduce((t, x) => t + x.r.deuda, 0))}. ${abiertas.length} PQR abiertas. ${alarmas.length} alarmas de medidores (${alarmas.filter((x) => x.tipo === 'fuga').length} fugas). ${atipicos.length} consumos atípicos.`)
+  }
+  return lineas.join('\n')
 }
 
 export const INSTRUCCIONES = `Eres el asistente del sistema de gestión de EMCAGUA APC. Respondes en español de Colombia, claro y breve, a trabajadores operativos y administrativos (no son ingenieros).
@@ -55,6 +70,50 @@ export async function estadoOllama(url: string): Promise<{ ok: boolean; modelos:
   }
 }
 
+/** Opciones para responder rápido en un PC sin tarjeta gráfica: contexto corto y respuestas acotadas. */
+const OPCIONES = { temperature: 0.2, num_ctx: 4096, num_predict: 450 }
+
+/** Carga el modelo en memoria para que la primera pregunta no espere. Lo mantiene cargado 30 minutos. */
+export async function calentarOllama(url: string, modelo: string) {
+  try { await fetch(`${url.replace(/\/$/, '')}/api/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: modelo, keep_alive: '30m', prompt: '' }) }) } catch { /* sin IA */ }
+}
+
+/** Igual que preguntarOllama, pero entrega el texto a medida que el modelo lo escribe. */
+export async function preguntarOllamaStream(url: string, modelo: string, historial: Mensaje[], contexto: string, alEscribir: (parcial: string) => void, signal?: AbortSignal): Promise<string> {
+  const r = await fetch(`${url.replace(/\/$/, '')}/api/chat`, {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: modelo,
+      stream: true,
+      keep_alive: '30m',
+      options: OPCIONES,
+      messages: [
+        { role: 'system', content: `${INSTRUCCIONES}\n\nCONTEXTO DE DATOS:\n${contexto}` },
+        ...historial.slice(-6).map((m) => ({ role: m.rol === 'usuario' ? 'user' : 'assistant', content: m.texto })),
+      ],
+    }),
+  })
+  if (!r.ok || !r.body) throw new Error(`Ollama respondió ${r.status}`)
+  const lector = r.body.getReader()
+  const dec = new TextDecoder()
+  let buffer = '', texto = ''
+  for (;;) {
+    const { done, value } = await lector.read()
+    if (done) break
+    buffer += dec.decode(value, { stream: true })
+    const lineas = buffer.split('\n')
+    buffer = lineas.pop() ?? ''
+    for (const l of lineas) {
+      if (!l.trim()) continue
+      const j = JSON.parse(l)
+      if (j.message?.content) { texto += j.message.content; alEscribir(texto) }
+    }
+  }
+  return texto.trim() || 'No obtuve respuesta del modelo.'
+}
+
 export async function preguntarOllama(url: string, modelo: string, historial: Mensaje[], contexto: string): Promise<string> {
   const r = await fetch(`${url.replace(/\/$/, '')}/api/chat`, {
     method: 'POST',
@@ -62,10 +121,11 @@ export async function preguntarOllama(url: string, modelo: string, historial: Me
     body: JSON.stringify({
       model: modelo,
       stream: false,
-      options: { temperature: 0.2 },
+      keep_alive: '30m',
+      options: OPCIONES,
       messages: [
         { role: 'system', content: `${INSTRUCCIONES}\n\nCONTEXTO DE DATOS:\n${contexto}` },
-        ...historial.slice(-8).map((m) => ({ role: m.rol === 'usuario' ? 'user' : 'assistant', content: m.texto })),
+        ...historial.slice(-6).map((m) => ({ role: m.rol === 'usuario' ? 'user' : 'assistant', content: m.texto })),
       ],
     }),
   })
@@ -78,14 +138,42 @@ export async function preguntarOllama(url: string, modelo: string, historial: Me
 /* Respuestas sin IA (reglas)                                          */
 /* ------------------------------------------------------------------ */
 
-const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 
-export function responderSinIA(pregunta: string, { usuarios, pagos, pqrs, lecturas, alarmas }: Contexto): string {
+/** Respuesta instantánea con reglas. Devuelve null si la pregunta no encaja en ninguna regla. */
+export function respuestaRapida(pregunta: string, { usuarios, pagos, pqrs, lecturas, alarmas, materiales }: Contexto): string | null {
   const q = norm(pregunta)
   const serie = serieMensual(usuarios, 12)
   const ult = serie[serie.length - 1]
   const mesPedido = MESES.findIndex((m) => q.includes(norm(m)))
   const barrioPedido = BARRIOS.find((b) => q.includes(norm(b)))
+
+  if (/urgent|pendiente|hoy que|que hago|prioridad|que hay para hoy|atender/.test(q)) {
+    const ab = pqrs.filter((p) => p.estado === 'Radicada' || p.estado === 'En trámite')
+    const venc = ab.filter((p) => diasHabilesRestantes(p.vence) < 0)
+    const graves = alarmas.filter((a) => ALARMAS[a.tipo].grave)
+    const morosos = usuarios.filter((x) => x.estado === 'Activo' && resumenUsuario(x).vencido)
+    const bajos = (materiales ?? []).filter((m) => estadoStock(m) !== 'OK')
+    const items = [
+      venc.length && `- **${venc.length} PQR vencida(s)**: respóndelas hoy (silencio administrativo positivo).`,
+      graves.length && `- **${graves.length} alarma(s) grave(s)** en medidores: ${graves.slice(0, 3).map((a) => `${ALARMAS[a.tipo].label.toLowerCase()} de ${a.usuario.nombre}`).join(', ')}.`,
+      morosos.length && `- ${morosos.length} usuario(s) en mora con servicio activo: envíales aviso por WhatsApp.`,
+      bajos.length && `- ${bajos.length} material(es) bajo el mínimo: ${bajos.map((m) => m.nombre).join(', ')}.`,
+    ].filter(Boolean)
+    return items.length ? `**Lo más urgente hoy:**\n${items.join('\n')}` : 'No hay nada urgente hoy. 👍'
+  }
+
+  if (/perdid|no contabiliz|ianc|pierde/.test(q)) {
+    const b = balanceHidrico(usuarios, 2)
+    const u0 = b[b.length - 1]
+    if (!u0) return 'Aún no hay datos de macromedición.'
+    const peor = [...u0.sectores].sort((a, c) => c.ianc - a.ianc)
+    return `En **${u0.full}** se perdió el **${pct(u0.ianc, 1)}** del agua producida (${num(u0.perdido)} m³)${u0.ianc > IANC_META ? `, por encima de la meta de ${pct(IANC_META)}` : ''}.\n${peor.map((x) => `- ${x.barrio}: ${pct(x.ianc, 1)} (${num(x.perdido)} m³)`).join('\n')}\nRecomendación: buscar fugas primero en ${peor[0].barrio}.`
+  }
+
+  if (/comprar|material|inventario|bodega|stock|agot/.test(q) && materiales) {
+    const bajos = materiales.filter((m) => estadoStock(m) !== 'OK')
+    return bajos.length ? `Hay **${bajos.length} material(es)** por debajo del mínimo:\n${bajos.map((m) => `- ${m.nombre}: quedan ${m.stock} ${m.unidad} (mínimo ${m.minimo})`).join('\n')}` : 'Todos los materiales están por encima del mínimo.'
+  }
 
   // Usuario específico
   const u = usuarios.find((x) => q.includes(x.id) || (x.nombre.length > 5 && q.includes(norm(x.nombre))))
@@ -145,7 +233,12 @@ export function responderSinIA(pregunta: string, { usuarios, pagos, pqrs, lectur
     return `**Resumen ${ult?.full ?? ''}**\n- Facturado ${cop(ult?.facturado ?? 0)}, recaudado ${cop(ult?.recaudado ?? 0)} (${pct(ult?.facturado ? ult.recaudado / ult.facturado : 0, 1)}).\n- ${morosos.length} usuarios en mora por ${cop(morosos.reduce((s, x) => s + resumenUsuario(x).deuda, 0))}.\n- Consumo total ${num(ult?.consumo ?? 0)} m³; el barrio con mayor promedio es ${top.barrio} (${num(top.consumoPromedio, 1)} m³).\n- ${at.length} posible(s) fuga(s) por revisar.\n- ${ab.length} PQR abiertas, ${ab.filter((p) => diasHabilesRestantes(p.vence) < 0).length} vencidas.`
   }
 
-  return `Puedo responder sobre **recaudo**, **cartera y mora**, **consumo por barrio o mes**, **posibles fugas**, **PQR**, **lecturas** o un **usuario por nombre o ID**.\nEjemplos: "¿cuánto se recaudó en agosto?", "¿quiénes deben en Guamalito?", "¿hay posibles fugas?".\n_Para preguntas abiertas conecta Ollama (panel de la derecha)._`
+  return null
+}
+
+/** Reglas con mensaje de ayuda cuando ninguna aplica. */
+export function responderSinIA(pregunta: string, ctx: Contexto): string {
+  return respuestaRapida(pregunta, ctx) ?? `Puedo responder sobre **recaudo**, **cartera y mora**, **consumo por barrio o mes**, **posibles fugas**, **PQR**, **lecturas** o un **usuario por nombre o ID**.\nEjemplos: "¿cuánto se recaudó en agosto?", "¿quiénes deben en Guamalito?", "¿hay posibles fugas?".\n_Para preguntas abiertas activa la IA local en Asistente IA → Configurar._`
 }
 
 /** Pide a Ollama un texto (sin historial de chat). */
@@ -153,7 +246,7 @@ export async function redactarOllama(url: string, modelo: string, sistema: strin
   const r = await fetch(`${url.replace(/\/$/, '')}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: modelo, stream: false, ...(json ? { format: 'json' } : {}), options: { temperature: 0.4 }, messages: [{ role: 'system', content: sistema }, { role: 'user', content: pedido }] }),
+    body: JSON.stringify({ model: modelo, stream: false, keep_alive: '30m', ...(json ? { format: 'json' } : {}), options: { ...OPCIONES, temperature: 0.4, num_predict: 700 }, messages: [{ role: 'system', content: sistema }, { role: 'user', content: pedido }] }),
   })
   if (!r.ok) throw new Error(`Ollama respondió ${r.status}`)
   const j = await r.json()
@@ -164,4 +257,54 @@ export async function redactarOllama(url: string, modelo: string, sistema: strin
 export function configOllama() {
   const leer = (k: string, d: string) => { try { return localStorage.getItem(k) ?? d } catch { return d } }
   return { url: leer('emc_ollama_url', 'http://localhost:11434'), modelo: leer('emc_ollama_modelo', '') }
+}
+
+/* ------------------------------------------------------------------ */
+/* Navegación por voz/texto: "llévame a pagos", "abre PQR"             */
+/* ------------------------------------------------------------------ */
+
+const DESTINOS: [RegExp, string, string][] = [
+  [/mi dia|inicio/, '/mi-dia', 'Mi día'],
+  [/dashboard|tablero/, '/dashboard', 'Dashboard'],
+  [/analitica|grafic/, '/analitica', 'Analítica'],
+  [/reporte sui|sui|superservicios/, '/sui', 'Reportes SUI'],
+  [/reporte|informe/, '/reporte', 'Reportes'],
+  [/usuario|suscriptor/, '/usuarios', 'Usuarios'],
+  [/medidor|lectura/, '/lecturas', 'Medidores'],
+  [/factura/, '/facturacion', 'Facturación'],
+  [/caja|pago|cobr/, '/pagos', 'Pagos y caja'],
+  [/pqr|queja|reclamo/, '/pqr', 'PQR'],
+  [/perdida|no contabiliz/, '/perdidas', 'Pérdidas de agua'],
+  [/inventario|material|bodega/, '/inventario', 'Inventario'],
+  [/documento|certificado|carta|oficio|memorando/, '/documentos', 'Documentos'],
+  [/redes|publicacion|post|imagen/, '/redes', 'Redes sociales'],
+  [/whatsapp|aviso/, '/avisos', 'Avisos WhatsApp'],
+  [/tarifa/, '/tarifas', 'Tarifas'],
+  [/nomina|empleado|sueldo/, '/nomina', 'Nómina'],
+]
+
+/** Si la frase pide ir a un módulo, devuelve a cuál. */
+export function destinoNavegacion(pregunta: string): { ruta: string; nombre: string } | null {
+  const q = norm(pregunta)
+  if (!/^(ir a|ve a|vamos a|llevame|llévame|abre|abrir|muestrame|mostrar|entra a|entrar a)\b/.test(q)) return null
+  const d = DESTINOS.find(([re]) => re.test(q))
+  return d ? { ruta: d[1], nombre: d[2] } : null
+}
+
+/** Preguntas sugeridas según la pantalla en la que está el gerente. */
+export function sugerenciasPara(ruta: string): string[] {
+  const m: Record<string, string[]> = {
+    '/mi-dia': ['¿Qué es lo más urgente hoy?', 'Dame un resumen para la gerencia'],
+    '/dashboard': ['Dame un resumen para la gerencia', '¿Cuánto se recaudó el último mes?'],
+    '/analitica': ['¿Qué barrio consume más agua?', '¿Cuánto se recaudó el último mes?'],
+    '/usuarios': ['¿Quiénes deben más?', '¿Hay posibles fugas?'],
+    '/lecturas': ['¿Qué medidores tienen alarma?', '¿Hay posibles fugas?'],
+    '/facturacion': ['¿Cuánto se facturó el último mes?', '¿Quiénes deben más?'],
+    '/pagos': ['¿Cuánto se recaudó el último mes?', '¿Quiénes deben más?'],
+    '/pqr': ['¿Cómo van las PQR?', '¿Qué es lo más urgente hoy?'],
+    '/perdidas': ['¿Qué barrio pierde más agua?', '¿Hay posibles fugas?'],
+    '/inventario': ['¿Qué materiales hay que comprar?'],
+    '/nomina': ['¿Qué es lo más urgente hoy?'],
+  }
+  return m[ruta] ?? ['¿Qué es lo más urgente hoy?', 'Dame un resumen para la gerencia']
 }

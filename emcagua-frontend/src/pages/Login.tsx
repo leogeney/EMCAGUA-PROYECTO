@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { login } from '../utils/session'
+import { buscarCuenta, registrarAcceso } from '../data/cuentas'
 import Icon from '../components/ui/Icon'
 
 const Ico = ({ d, className = 'w-[18px] h-[18px]' }: { d: string; className?: string }) => <Icon d={d} className={className} />
@@ -36,11 +37,15 @@ export default function Login() {
       setError('Ingresa tu usuario y contraseña')
       return
     }
+    const cuenta = buscarCuenta(form.username)
+    if (!cuenta) { setError('Ese usuario no existe. Pídele al gerente que te cree una cuenta.'); return }
+    if (!cuenta.activo) { setError('Tu cuenta está desactivada. Habla con el gerente.'); return }
     setError('')
     setLoading(true)
     setTimeout(() => {
-      login(form.username.trim())
-      navigate('/dashboard')
+      login(cuenta.usuario)
+      registrarAcceso(cuenta.usuario)
+      navigate('/mi-dia')
     }, 600)
   }
 
@@ -223,7 +228,7 @@ export default function Login() {
             </form>
 
             <div className="mt-8 rounded-2xl border border-dashed border-amber-200 bg-amber-50/60 px-4 py-3 text-center">
-              <p className="text-xs text-amber-800"><span className="font-semibold">Modo demostración:</span> cualquier usuario y contraseña te dejan entrar. Usa el usuario <b>admin</b> para ver Nómina.</p>
+              <p className="text-xs text-amber-800"><span className="font-semibold">Modo demostración:</span> entra con <b>admin</b> (gerente), <b>yaneth</b> (cajera), <b>diana</b> (atención), <b>alvaro</b> (técnico) o <b>martha</b> (contadora), con cualquier contraseña. Cada rol ve solo sus módulos.</p>
             </div>
           </div>
         </div>

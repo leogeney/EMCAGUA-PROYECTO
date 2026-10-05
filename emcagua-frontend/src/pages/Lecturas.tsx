@@ -9,7 +9,6 @@ import { ColumnChart } from '../components/charts/charts'
 import Avatar from '../components/ui/Avatar'
 import Drawer from '../components/ui/Drawer'
 import Ico from '../components/ui/Icon'
-import { ConfirmDialog } from '../components/ui/Modal'
 import { useToast } from '../components/ui/Toast'
 import { hora, num } from '../utils/format'
 import { getUsername } from '../utils/session'
@@ -37,12 +36,11 @@ function hace(ts: number, ahora: number) {
 }
 
 export default function Lecturas() {
-  const { usuarios, lecturas, periodoLectura, medidores, alarmas, sincronizar, registrarLectura, borrarLectura, facturarPeriodo } = useData()
+  const { usuarios, lecturas, periodoLectura, cierrePeriodo, medidores, alarmas, sincronizar, registrarLectura, borrarLectura } = useData()
   const toast = useToast()
   const [filtro, setFiltro] = useState<Filtro>('todos')
   const [barrio, setBarrio] = useState('Todos')
   const [q, setQ] = useState('')
-  const [confirmar, setConfirmar] = useState(false)
   const [abierto, setAbierto] = useState<string | null>(null)
   const [ahora, setAhora] = useState(() => Date.now())
 
@@ -72,11 +70,6 @@ export default function Lecturas() {
     setAhora(Date.now())
     toast('Medidores sincronizados', n ? `${n} lectura(s) nueva(s) recibida(s)` : `${online.length} medidores al día · ${caidos.length} sin comunicación`)
   }
-  const cerrar = () => {
-    const r = facturarPeriodo()
-    setConfirmar(false)
-    toast(`Periodo ${nombrePeriodo(periodoLectura.mes, periodoLectura.anio)} facturado`, `${r.leidos} con lectura · ${r.estimados} por promedio · ${r.suspendidos} suspendidos`)
-  }
   const sel = red.find((u) => u.id === abierto)
 
   return (
@@ -87,11 +80,15 @@ export default function Lecturas() {
           <h1 className="text-[28px] font-extrabold tracking-tight text-dark leading-none">Lecturas automáticas</h1>
           <p className="text-sm text-gray-500 mt-2">Los medidores envían su lectura solos. Aquí revisas lo que llegó, las alarmas y los que no reportaron.</p>
         </div>
-        <div className="flex gap-2 shrink-0">
-          <button onClick={sync} className="btn-secondary"><Ico d={D.sync} /> Sincronizar</button>
-          <button onClick={() => setConfirmar(true)} className="btn-primary"><Ico d={D.check} /> Cerrar y facturar periodo</button>
-        </div>
+        <button onClick={sync} className="btn-secondary shrink-0"><Ico d={D.sync} /> Sincronizar</button>
       </div>
+
+      <CierreMensual cierre={cierrePeriodo} periodo={nombrePeriodo(periodoLectura.mes, periodoLectura.anio)} ahora={ahora} resumen={[
+        `${remotas} con lectura automática`,
+        ...(manuales.length ? [`${manuales.length} con lectura en sitio`] : []),
+        ...(sinLectura.length ? [`${sinLectura.length} sin lectura → por promedio (Ley 142, art. 146)`] : []),
+        `${cortados} suspendidos`,
+      ]} />
 
       {/* Indicadores */}
       <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
@@ -208,26 +205,32 @@ export default function Lecturas() {
         )}
       </Drawer>
 
-      <ConfirmDialog
-        open={confirmar}
-        title={`¿Cerrar y facturar ${nombrePeriodo(periodoLectura.mes, periodoLectura.anio)}?`}
-        message={
-          <div className="space-y-2">
-            <p>Se generarán las facturas del periodo:</p>
-            <ul className="list-disc pl-5 space-y-1">
-              <li><b>{remotas}</b> con lectura automática del medidor.</li>
-              {manuales.length > 0 && <li><b>{manuales.length}</b> con lectura tomada en sitio.</li>}
-              {sinLectura.length > 0 && <li><b>{sinLectura.length}</b> sin lectura (medidor sin comunicación): se facturan por <b>promedio</b> (Ley 142, art. 146).</li>}
-              <li><b>{cortados}</b> con servicio cortado quedan suspendidos.</li>
-            </ul>
-            {graves.length > 0 && <p className="text-amber-700">Hay {graves.length} alarma(s) grave(s). Conviene revisarlas antes de facturar.</p>}
-          </div>
-        }
-        confirmLabel="Facturar periodo"
-        onCancel={() => setConfirmar(false)}
-        onConfirm={cerrar}
-      />
     </div>
+  )
+}
+
+/** El periodo se cierra solo cada mes, el mismo día en que se generan las facturas. */
+function CierreMensual({ cierre, periodo, ahora, resumen }: { cierre: Date; periodo: string; ahora: number; resumen: string[] }) {
+  const inicio = new Date(cierre); inicio.setMonth(inicio.getMonth() - 1)
+  const total = cierre.getTime() - inicio.getTime()
+  const avance = Math.min(1, Math.max(0, (ahora - inicio.getTime()) / total))
+  const dias = Math.max(0, Math.ceil((cierre.getTime() - ahora) / 86_400_000))
+  const fechaTxt = `${['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'][cierre.getDay()]} ${cierre.getDate()} de ${cierre.toLocaleDateString('es-CO', { month: 'long' })}`
+  return (
+    <section className="card p-5 mb-5 flex flex-col lg:flex-row lg:items-center gap-5">
+      <div className="flex items-center gap-4 lg:w-[380px] shrink-0">
+        <span className="h-12 w-12 rounded-2xl bg-secondary/10 text-secondary flex items-center justify-center shrink-0"><Ico d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" className="w-6 h-6" /></span>
+        <div>
+          <p className="text-[11px] uppercase tracking-wider text-gray-400 font-semibold">Cierre automático de {periodo}</p>
+          <p className="text-lg font-extrabold text-dark first-letter:uppercase">{fechaTxt}</p>
+          <p className="text-xs text-gray-500">{dias === 0 ? 'Hoy se generan las facturas' : `Faltan ${dias} día(s)`} · 14 días antes del vencimiento (primer viernes)</p>
+        </div>
+      </div>
+      <div className="flex-1">
+        <div className="h-2 rounded-full bg-gray-soft overflow-hidden"><div className="h-full rounded-full bg-secondary" style={{ width: `${avance * 100}%` }} /></div>
+        <p className="text-xs text-gray-500 mt-2">Ese día el sistema toma la última lectura de cada medidor y genera las facturas, igual que cada mes. Si hoy cerrara: {resumen.join(' · ')}.</p>
+      </div>
+    </section>
   )
 }
 

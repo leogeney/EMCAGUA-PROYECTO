@@ -1,4 +1,4 @@
-export const cop = (n: number) => `$${Math.round(n).toLocaleString('es-CO')}`
+export const cop = (n: number) => `${n < 0 ? '−' : ''}$${Math.abs(Math.round(n)).toLocaleString('es-CO')}`
 
 /** $2,4 M · $850 mil · $12.000 */
 export function copCompacto(n: number) {

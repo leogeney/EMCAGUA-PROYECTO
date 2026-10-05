@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { configOllama, estadoOllama, redactarOllama } from '../data/asistente'
 import { dibujar, FORMATOS, parsearPieza, SISTEMA_REDES, TIPOS, tipoPieza, type Detalle, type Icono, type Pieza } from '../data/redes'
 import { fechaLarga } from '../data/documentos'
+import { cfg } from '../data/config'
 import { ILUSTRACIONES, ilustracion, svgUrl } from '../data/ilustraciones'
 import Ico from '../components/ui/Icon'
 import { useToast } from '../components/ui/Toast'
@@ -27,7 +28,7 @@ export default function Redes() {
   const [tipoId, setTipoId] = useState(TIPOS[0].id)
   const [pieza, setPieza] = useState<Pieza>(() => TIPOS[0].base())
   const [formatoId, setFormatoId] = useState(FORMATOS[0].id)
-  const [contacto, setContacto] = useState('')
+  const [contacto, setContacto] = useState(() => { const c = cfg(); return c.whatsapp ? `WhatsApp ${c.whatsapp}` : c.telefono ? `Tel. ${c.telefono}` : '' })
   const [foto, setFoto] = useState<HTMLImageElement>()
   const [ilusId, setIlusId] = useState(TIPOS[0].ilustracion) // id, 'foto' o 'ninguna'
   const [ilusImg, setIlusImg] = useState<HTMLImageElement>()

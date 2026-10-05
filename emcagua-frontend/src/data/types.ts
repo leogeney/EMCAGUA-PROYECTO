@@ -22,7 +22,7 @@ export type Usuario = {
   historial: Periodo[] // orden cronológico
 }
 
-export type MetodoPago = 'Efectivo' | 'Transferencia'
+export type MetodoPago = 'Efectivo' | 'Transferencia' | 'En línea'
 
 export type Pago = {
   id: string
@@ -35,6 +35,7 @@ export type Pago = {
   recibido?: number
   vueltos?: number
   comprobante?: string
+  cajero?: string // quién lo recibió ('Portal web' si lo pagó el usuario)
   timestamp: number
 }
 
@@ -81,7 +82,7 @@ export type Pqr = {
   radicado: string
   tipo: TipoPqr
   categoria: CategoriaPqr
-  canal: 'Presencial' | 'Teléfono' | 'WhatsApp' | 'Correo'
+  canal: 'Presencial' | 'Teléfono' | 'WhatsApp' | 'Correo' | 'Portal web'
   suscriptorId?: string
   nombre: string
   telefono: string

@@ -10,8 +10,8 @@ import { diasHabilesRestantes } from './pqr'
 import type { Lectura, Pago, Pqr, Usuario } from './types'
 import { ALARMAS, type AlarmaMedidor } from './telemetria'
 import { estadoStock, type Material } from './operacion'
-import { balanceHidrico, IANC_META } from './perdidas'
 import { cop, num, pct } from '../utils/format'
+import { balanceHidrico, IANC_META } from './perdidas'
 
 export type Mensaje = { rol: 'usuario' | 'asistente'; texto: string; fuente?: 'ollama' | 'reglas'; pregunta?: string; escribiendo?: boolean }
 
@@ -162,10 +162,11 @@ export function respuestaRapida(pregunta: string, { usuarios, pagos, pqrs, lectu
     return items.length ? `**Lo más urgente hoy:**\n${items.join('\n')}` : 'No hay nada urgente hoy. 👍'
   }
 
+
   if (/perdid|no contabiliz|ianc|pierde/.test(q)) {
     const b = balanceHidrico(usuarios, 2)
     const u0 = b[b.length - 1]
-    if (!u0) return 'Aún no hay datos de macromedición.'
+    if (!u0) return 'Aún no hay datos de agua producida.'
     const peor = [...u0.sectores].sort((a, c) => c.ianc - a.ianc)
     return `En **${u0.full}** se perdió el **${pct(u0.ianc, 1)}** del agua producida (${num(u0.perdido)} m³)${u0.ianc > IANC_META ? `, por encima de la meta de ${pct(IANC_META)}` : ''}.\n${peor.map((x) => `- ${x.barrio}: ${pct(x.ianc, 1)} (${num(x.perdido)} m³)`).join('\n')}\nRecomendación: buscar fugas primero en ${peor[0].barrio}.`
   }
@@ -175,11 +176,18 @@ export function respuestaRapida(pregunta: string, { usuarios, pagos, pqrs, lectu
     return bajos.length ? `Hay **${bajos.length} material(es)** por debajo del mínimo:\n${bajos.map((m) => `- ${m.nombre}: quedan ${m.stock} ${m.unidad} (mínimo ${m.minimo})`).join('\n')}` : 'Todos los materiales están por encima del mínimo.'
   }
 
-  // Usuario específico
-  const u = usuarios.find((x) => q.includes(x.id) || (x.nombre.length > 5 && q.includes(norm(x.nombre))))
+  // Usuario específico (por código, cédula o nombre). Si el dueño tiene varias casas, se muestran todas.
+  const qd = pregunta.replace(/\D/g, '')
+  const u = usuarios.find((x) => q.includes(x.id) || (qd.length >= 6 && x.cedula.replace(/\D/g, '') === qd) || (x.nombre.length > 5 && q.includes(norm(x.nombre))))
   if (u) {
+    const casas = usuarios.filter((x) => x.cedula && x.cedula === u.cedula)
+    const linea = (x: typeof u) => { const r = resumenUsuario(x); return `- **${x.direccion || x.id}** (código ${x.id}, ${x.barrio}, estrato ${x.estrato}) · ${x.estado.toLowerCase()} · último consumo ${r.consumoActual} m³ · ${r.deuda ? `debe ${cop(r.deuda)}${r.vencido ? ' (**vencida**)' : ''}` : 'al día'}` }
+    if (casas.length > 1 && !q.includes(u.id)) {
+      const total = casas.reduce((s, x) => s + resumenUsuario(x).deuda, 0)
+      return `**${u.nombre}** (C.C. ${u.cedula}) tiene **${casas.length} predios**:\n${casas.map(linea).join('\n')}\n\n${total ? `Debe en total **${cop(total)}**. En Pagos y caja se puede cobrar todo en un solo recibo.` : 'Está al día en todos.'}`
+    }
     const r = resumenUsuario(u)
-    return `**${u.nombre}** (ID ${u.id}, ${u.barrio}, estrato ${u.estrato}) · servicio **${u.estado}**.\n- Último consumo: ${r.consumoActual} m³ (promedio ${num(r.consumoPromedio, 1)} m³).\n- Saldo: ${r.deuda ? `${cop(r.deuda)} en ${r.pagosDebe} factura(s)${r.vencido ? ', **vencida**' : ''}` : 'al día'}.`
+    return `**${u.nombre}** (código ${u.id}, ${u.direccion}, ${u.barrio}, estrato ${u.estrato}) · servicio **${u.estado}**.\n- Último consumo: ${r.consumoActual} m³ (promedio ${num(r.consumoPromedio, 1)} m³).\n- Saldo: ${r.deuda ? `${cop(r.deuda)} en ${r.pagosDebe} factura(s)${r.vencido ? ', **vencida**' : ''}` : 'al día'}.${casas.length > 1 ? `\n- Es propietario de ${casas.length} predios: ${casas.filter((x) => x.id !== u.id).map((x) => `${x.direccion || x.id} (${x.id})`).join(', ')}.` : ''}`
   }
 
   if (/recaud|cobr|pagar|pagos|ingres/.test(q)) {
@@ -242,15 +250,64 @@ export function responderSinIA(pregunta: string, ctx: Contexto): string {
 }
 
 /** Pide a Ollama un texto (sin historial de chat). */
+/** Lee la respuesta de Ollama palabra por palabra (formato NDJSON). */
+async function leerStream(r: Response, alEscribir: (parcial: string) => void) {
+  if (!r.ok || !r.body) throw new Error(`Ollama respondió ${r.status}`)
+  const lector = r.body.getReader()
+  const dec = new TextDecoder()
+  let buffer = '', texto = ''
+  for (;;) {
+    const { done, value } = await lector.read()
+    if (done) break
+    buffer += dec.decode(value, { stream: true })
+    const lineas = buffer.split('\n')
+    buffer = lineas.pop() ?? ''
+    for (const l of lineas) {
+      if (!l.trim()) continue
+      const j = JSON.parse(l)
+      if (j.message?.content) { texto += j.message.content; alEscribir(texto) }
+    }
+  }
+  return texto.trim()
+}
+
+/**
+ * Redacta un texto largo mostrando el avance mientras el modelo escribe.
+ * `largo` = tokens máximos (≈ 4 caracteres por token): acotarlo evita esperas innecesarias.
+ */
+export async function redactarOllamaStream(url: string, modelo: string, sistema: string, pedido: string, alEscribir: (parcial: string) => void, largo = 600, signal?: AbortSignal): Promise<string> {
+  const r = await fetch(`${url.replace(/\/$/, '')}/api/chat`, {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: modelo, stream: true, keep_alive: '30m', options: { ...OPCIONES, temperature: 0.4, num_predict: largo }, messages: [{ role: 'system', content: sistema }, { role: 'user', content: pedido }] }),
+  })
+  return leerStream(r, alEscribir)
+}
+
 export async function redactarOllama(url: string, modelo: string, sistema: string, pedido: string, json = false): Promise<string> {
   const r = await fetch(`${url.replace(/\/$/, '')}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: modelo, stream: false, keep_alive: '30m', ...(json ? { format: 'json' } : {}), options: { ...OPCIONES, temperature: 0.4, num_predict: 700 }, messages: [{ role: 'system', content: sistema }, { role: 'user', content: pedido }] }),
+    body: JSON.stringify({ model: modelo, stream: false, keep_alive: '30m', ...(json ? { format: 'json' } : {}), options: { ...OPCIONES, temperature: 0.4, num_predict: json ? 350 : 700 }, messages: [{ role: 'system', content: sistema }, { role: 'user', content: pedido }] }),
   })
   if (!r.ok) throw new Error(`Ollama respondió ${r.status}`)
   const j = await r.json()
   return String(j.message?.content ?? '').trim()
+}
+
+/**
+ * JSON corto con streaming (piezas de redes): contexto pequeño y pocas palabras = respuesta rápida.
+ * `alEscribir` recibe el JSON a medias para ir mostrando cada campo apenas aparece.
+ */
+export async function redactarJsonStream(url: string, modelo: string, sistema: string, pedido: string, alEscribir: (parcial: string) => void, signal?: AbortSignal): Promise<string> {
+  const r = await fetch(`${url.replace(/\/$/, '')}/api/chat`, {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: modelo, stream: true, format: 'json', keep_alive: '30m', options: { temperature: 0.5, num_ctx: 2048, num_predict: 320, top_k: 30 }, messages: [{ role: 'system', content: sistema }, { role: 'user', content: pedido }] }),
+  })
+  return leerStream(r, alEscribir)
 }
 
 /** URL y modelo guardados en la pantalla del Asistente. */
@@ -306,5 +363,5 @@ export function sugerenciasPara(ruta: string): string[] {
     '/inventario': ['¿Qué materiales hay que comprar?'],
     '/nomina': ['¿Qué es lo más urgente hoy?'],
   }
-  return m[ruta] ?? ['¿Qué es lo más urgente hoy?', 'Dame un resumen para la gerencia']
+  return ['¿Qué me recomiendas?', ...(m[ruta] ?? ['¿Qué es lo más urgente hoy?', 'Dame un resumen para la gerencia']).slice(0, 2)]
 }

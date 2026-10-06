@@ -6,6 +6,7 @@ import { MODULOS } from './data/cuentas'
 import { cuentaActual, isLoggedIn, logout, puede } from './utils/session'
 
 const Portal = lazy(() => import('./pages/Portal'))
+const Verificar = lazy(() => import('./pages/Verificar'))
 
 /** Cada módulo protegido por permiso del rol. La clave es el id del módulo (= ruta). */
 const PAGINAS: Record<string, LazyExoticComponent<ComponentType>> = {
@@ -62,6 +63,7 @@ export default function App() {
         <Route path="/caja" element={<Navigate to="/pagos?tab=caja" replace />} />
       </Route>
       <Route path="/portal" element={<Suspense fallback={null}><Portal /></Suspense>} />
+      <Route path="/verificar" element={<Suspense fallback={null}><Verificar /></Suspense>} />
       <Route path="*" element={<Navigate to="/mi-dia" replace />} />
     </Routes>
   )

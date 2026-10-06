@@ -1,9 +1,9 @@
+import { balanceHidrico } from '../data/perdidas'
 import { useMemo, useState } from 'react'
 import { useData } from '../data/DataContext'
 import { usePqr } from '../data/PqrContext'
 import { facturaId, nombrePeriodo, periodosFacturados } from '../data/billing'
 import { diasHabilesEntre } from '../data/pqr'
-import { balanceHidrico } from '../data/perdidas'
 import { valorPeriodo } from '../data/tarifa'
 import { serieMensual, edadCartera } from '../data/analytics'
 import Ico from '../components/ui/Icon'
@@ -50,7 +50,7 @@ export default function Sui() {
       ['Suscriptores registrados', usuarios.length, 'und'],
       ['Suscriptores con servicio activo', usuarios.filter((u) => u.estado === 'Activo').length, 'und'],
       ['Suscriptores suspendidos', usuarios.filter((u) => u.estado === 'Cortado').length, 'und'],
-      ['Agua producida (macromedición)', b?.producido ?? '', 'm³'],
+      ['Agua producida', b?.producido ?? '', 'm³'],
       ['Agua facturada', b?.facturado ?? s?.consumo ?? '', 'm³'],
       ['Índice de agua no contabilizada (IANC)', b ? (b.ianc * 100).toFixed(1) : '', '%'],
       ['Pérdidas por usuario facturado (IPUF)', b ? b.ipuf.toFixed(2) : '', 'm³/suscriptor/mes'],

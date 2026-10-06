@@ -13,6 +13,7 @@ import Modal from '../components/ui/Modal'
 import Ico from '../components/ui/Icon'
 import { useConfig } from '../data/config'
 import { cop, fecha, fechaCorta } from '../utils/format'
+import { etiquetaPredio, limpiarCedula, otrosPredios, saldoPropietario } from '../data/propietarios'
 
 const D = {
   lock: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z',
@@ -32,8 +33,10 @@ export default function Portal() {
   const u = usuarios.find((x) => x.id === usuarioId)
 
   const entrar = () => {
-    const x = usuarios.find((y) => y.id === id.trim())
-    if (!x || x.telefono.replace(/\D/g, '').slice(-4) !== tel.trim()) { setError('El código o los últimos 4 dígitos del celular no coinciden.'); return }
+    const q = id.trim(), ced = limpiarCedula(q)
+    // Con el código entra a esa casa; con la cédula, a la primera de sus casas (y ve todas)
+    const x = usuarios.find((y) => y.id === q) ?? (ced.length >= 6 ? usuarios.find((y) => limpiarCedula(y.cedula) === ced) : undefined)
+    if (!x || x.telefono.replace(/\D/g, '').slice(-4) !== tel.trim()) { setError('El código o la cédula no coinciden con los últimos 4 dígitos del celular.'); return }
     setError(''); setUsuarioId(x.id)
   }
 
@@ -42,7 +45,7 @@ export default function Portal() {
       <header className="bg-white border-b border-gray-100">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2"><Logo /><span className="hidden sm:inline text-xs text-gray-400 border-l border-gray-200 pl-3">Oficina virtual</span></div>
-          {u ? <button onClick={() => { setUsuarioId(null); setId(''); setTel('') }} className="btn-sm"><Ico d={D.out} /> Salir</button> : <Link to="/login" className="text-xs text-gray-400 hover:text-dark">Acceso funcionarios</Link>}
+          {u ? <button onClick={() => { setUsuarioId(null); setId(''); setTel('') }} className="btn-sm"><Ico d={D.out} /> Salir</button> : <div className="flex items-center gap-4"><Link to="/verificar" className="text-xs font-semibold text-secondary hover:underline">Verificar un documento</Link><Link to="/login" className="text-xs text-gray-400 hover:text-dark">Acceso funcionarios</Link></div>}
         </div>
       </header>
 
@@ -58,9 +61,9 @@ export default function Portal() {
           </div>
           <div className="card p-6 sm:p-8">
             <h2 className="text-lg font-bold text-dark mb-1">Ingresa</h2>
-            <p className="text-sm text-gray-500 mb-5">Con el código de suscriptor que aparece en tu factura.</p>
+            <p className="text-sm text-gray-500 mb-5">Con el código de suscriptor que aparece en tu factura, o con tu cédula si tienes varias casas.</p>
             <div className="space-y-3">
-              <div><label className="field-label">Código de suscriptor</label><input value={id} onChange={(e) => setId(e.target.value)} placeholder="Ej: 10237" className="field h-12 text-lg tabular-nums" inputMode="numeric" /></div>
+              <div><label className="field-label">Código de suscriptor o cédula</label><input value={id} onChange={(e) => setId(e.target.value)} placeholder="Ej: 10237" className="field h-12 text-lg tabular-nums" inputMode="numeric" /></div>
               <div><label className="field-label">Últimos 4 dígitos de tu celular</label><input value={tel} onChange={(e) => setTel(e.target.value.replace(/\D/g, '').slice(0, 4))} onKeyDown={(e) => e.key === 'Enter' && entrar()} placeholder="••••" className="field h-12 text-lg tracking-[0.4em] tabular-nums" inputMode="numeric" /></div>
               {error && <p className="text-sm text-red-600">{error}</p>}
               <button onClick={entrar} className="btn-primary w-full h-12">Consultar</button>
@@ -69,15 +72,18 @@ export default function Portal() {
           </div>
         </main>
       ) : (
-        <Cuenta u={u} />
+        <Cuenta u={u} onCambiar={setUsuarioId} />
       )}
       <Pie />
     </div>
   )
 }
 
-function Cuenta({ u }: { u: Usuario }) {
-  const { resumen, pagarFactura } = useData()
+function Cuenta({ u, onCambiar }: { u: Usuario; onCambiar: (id: string) => void }) {
+  const { resumen, pagarFacturas, usuarios } = useData()
+  const casas = [u, ...otrosPredios(usuarios, u)].sort((a, b) => a.id.localeCompare(b.id))
+  const total = saldoPropietario(casas, resumen)
+  const pendTodas = casas.flatMap((c) => facturasDe(c).filter((f) => f.estado === 'Pendiente'))
   const { pqrs, radicar } = usePqr()
   const r = resumen(u)
   const pendientes = facturasDe(u).filter((f) => f.estado === 'Pendiente')
@@ -93,8 +99,26 @@ function Cuenta({ u }: { u: Usuario }) {
       <div>
         <p className="text-sm text-gray-500">Hola,</p>
         <h1 className="text-2xl font-extrabold text-dark">{u.nombre}</h1>
-        <p className="text-xs text-gray-400">Suscriptor {u.id} · Medidor {u.medidor} · {u.barrio}</p>
+        <p className="text-xs text-gray-400">Suscriptor {u.id} · Medidor {u.medidor} · {u.direccion} · {u.barrio}</p>
       </div>
+
+      {casas.length > 1 && (
+        <section className="card p-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+            <p className="font-bold text-dark">Tus {casas.length} predios</p>
+            {total.deuda > 0 && <button onClick={() => setPagar(pendTodas)} className="btn-primary h-10 text-sm whitespace-nowrap">Pagar todo · {cop(total.deuda)}</button>}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {casas.map((c) => { const rc = resumen(c); return (
+              <button key={c.id} onClick={() => onCambiar(c.id)} className={`text-left rounded-xl border-2 px-3.5 py-3 transition-colors ${c.id === u.id ? 'border-secondary bg-secondary/5' : 'border-gray-100 hover:border-gray-200'}`}>
+                <p className="text-sm font-semibold text-dark truncate">{etiquetaPredio(c)}</p>
+                <p className="text-xs text-gray-500">Código {c.id}{c.estado === 'Cortado' ? ' · suspendido' : ''}</p>
+                <p className={`text-sm font-bold tabular-nums mt-1 ${rc.deuda ? (rc.vencido ? 'text-red-600' : 'text-dark') : 'text-green-700'}`}>{rc.deuda ? cop(rc.deuda) : 'Al día'}</p>
+              </button>
+            ) })}
+          </div>
+        </section>
+      )}
 
       {ok && <div className="rounded-2xl bg-green-50 border border-green-100 text-green-900 px-4 py-3 text-sm flex items-center gap-2"><Ico d={D.check} className="w-4 h-4" /> {ok}</div>}
 
@@ -139,13 +163,15 @@ function Cuenta({ u }: { u: Usuario }) {
         )}
       </section>
 
-      {pagar && <PagoEnLinea facturas={pagar} onClose={() => setPagar(null)} onPagado={(ref) => { pagar.forEach((f) => pagarFactura(f.id, { metodo: 'En línea', comprobante: ref })); setPagar(null); setOk(`Pago aprobado. Comprobante ${ref}. ¡Gracias!`) }} />}
+      {pagar && <PagoEnLinea facturas={pagar} casas={casas} onClose={() => setPagar(null)} onPagado={(ref) => { pagarFacturas(pagar.map((f) => f.id), { metodo: 'En línea', comprobante: ref }); setPagar(null); setOk(`Pago aprobado. Comprobante ${ref}. ¡Gracias!`) }} />}
       {pqrAbierta && <NuevaPqr u={u} onClose={() => setPqrAbierta(false)} onRadicar={(p) => { const x = radicar(p); setPqrAbierta(false); setOk(`Radicamos tu ${x.tipo.toLowerCase()} con el número ${x.radicado}. Te responderemos en máximo 15 días hábiles.`) }} />}
     </main>
   )
 }
 
-function PagoEnLinea({ facturas, onClose, onPagado }: { facturas: Factura[]; onClose: () => void; onPagado: (ref: string) => void }) {
+function PagoEnLinea({ facturas, casas, onClose, onPagado }: { facturas: Factura[]; casas: Usuario[]; onClose: () => void; onPagado: (ref: string) => void }) {
+  const varias = new Set(facturas.map((f) => f.clienteId)).size > 1
+  const dir = (id: string) => casas.find((c) => c.id === id)?.direccion ?? id
   const total = facturas.reduce((s, f) => s + f.monto, 0)
   const [medio, setMedio] = useState<'PSE' | 'Nequi' | 'Daviplata'>('PSE')
   const [banco, setBanco] = useState('Bancolombia')
@@ -159,7 +185,7 @@ function PagoEnLinea({ facturas, onClose, onPagado }: { facturas: Factura[]; onC
         <div className="p-6 space-y-4">
           <div className="grid grid-cols-3 gap-2">{(['PSE', 'Nequi', 'Daviplata'] as const).map((m) => <button key={m} onClick={() => setMedio(m)} className={`h-12 rounded-xl border-2 font-bold text-sm ${medio === m ? 'border-secondary text-secondary bg-secondary/5' : 'border-gray-200 text-gray-600'}`}>{m}</button>)}</div>
           {medio === 'PSE' && <div><label className="field-label">Banco</label><select value={banco} onChange={(e) => setBanco(e.target.value)} className="field">{['Bancolombia', 'Banco de Bogotá', 'Davivienda', 'BBVA', 'Banco Agrario', 'Banco Caja Social'].map((b) => <option key={b}>{b}</option>)}</select></div>}
-          <ul className="text-sm rounded-xl bg-gray-soft divide-y divide-gray-200">{facturas.map((f) => <li key={f.id} className="flex justify-between px-3 py-2"><span>{f.periodo}</span><b className="tabular-nums">{cop(f.monto)}</b></li>)}</ul>
+          <ul className="text-sm rounded-xl bg-gray-soft divide-y divide-gray-200">{facturas.map((f) => <li key={f.id} className="flex justify-between gap-3 px-3 py-2"><span className="min-w-0 truncate">{varias ? `${dir(f.clienteId)} · ` : ''}{f.periodo}</span><b className="tabular-nums">{cop(f.monto)}</b></li>)}</ul>
           <button onClick={pagar} className="btn-primary w-full h-12">Pagar {cop(total)}</button>
           <p className="text-[11px] text-amber-700 bg-amber-50 rounded-lg px-3 py-2">Modo demostración: no se cobra dinero real. En producción este paso redirige a la pasarela de pagos contratada por la empresa.</p>
         </div>

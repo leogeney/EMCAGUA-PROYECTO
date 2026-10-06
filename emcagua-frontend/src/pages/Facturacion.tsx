@@ -8,7 +8,8 @@ import type { Factura } from '../data/types'
 import Modal from '../components/ui/Modal'
 import Paginacion from '../components/ui/Paginacion'
 import StatTile from '../components/ui/StatTile'
-import QrFalso from '../components/QrFalso'
+import Qr from '../components/Qr'
+import { codigoFactura, urlVerificacion } from '../data/verificacion'
 import { ColumnChart } from '../components/charts/charts'
 import { formatCutoff, getNextCutoff, getGenerationDate } from '../utils/cutoff'
 import { cop, copCompacto, fecha, fechaCorta, pct } from '../utils/format'
@@ -254,10 +255,11 @@ function DetalleFactura({ factura: f, onClose }: { factura: Factura; onClose: ()
 
         <div className="mt-5 flex flex-col sm:flex-row gap-3">
           <div className="flex-1 flex gap-3 items-center bg-gray-soft rounded-xl p-3">
-            <QrFalso value={f.id} size={72} />
+            <Qr value={urlVerificacion(f.id, codigoFactura(f))} size={96} />
             <div className="text-[11px] text-gray-500 leading-relaxed">
               <p className="font-mono font-bold text-dark">{f.id}</p>
-              <p>Código de validación</p>
+              <p>Escanee para verificar la factura y ver si ya está pagada</p>
+              <p>Código <b className="font-mono text-dark">{codigoFactura(f)}</b></p>
             </div>
           </div>
           <div className="flex-1 bg-secondary/5 border border-secondary/10 rounded-xl p-3 text-xs text-gray-600">

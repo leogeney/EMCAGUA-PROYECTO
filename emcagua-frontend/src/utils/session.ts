@@ -35,7 +35,9 @@ export function cuentaActual() {
 
 /** ¿El rol del funcionario permite ver este módulo? (id = ruta sin "/") */
 export function puede(modulo: string) {
-  return !!rolDe(cuentaActual())?.permisos.includes(modulo)
+  const rol = rolDe(cuentaActual())
+  // El rol fijo (Gerente) ve todo, incluso módulos nuevos que no estaban cuando se guardó el rol
+  return !!rol && (!!rol.fijo || rol.permisos.includes(modulo))
 }
 
 /** Administrador = rol con acceso total (Gerente). */

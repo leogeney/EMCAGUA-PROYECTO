@@ -20,6 +20,8 @@ type DataCtx = {
   cortar: (id: string) => void
   reactivar: (id: string, pago: DatosPago) => Pago
   pagarFactura: (facturaId: string, pago: DatosPago) => Pago | null
+  /** Varias facturas (p. ej. todos los predios de un mismo propietario) en un solo recibo. */
+  pagarFacturas: (facturaIds: string[], pago: DatosPago) => Pago | null
   periodoLectura: { mes: number; anio: number }
   /** Fecha en que el periodo se cierra y factura solo (14 días antes del vencimiento). */
   cierrePeriodo: Date
@@ -103,6 +105,27 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [usuarios, nuevoPago],
   )
 
+  const pagarFacturas = useCallback(
+    (ids: string[], datos: DatosPago) => {
+      const set = new Set(ids)
+      const cobradas = usuarios.flatMap((u) => facturasDe(u).filter((f) => set.has(f.id) && f.estado === 'Pendiente').map((f) => ({ u, f })))
+      if (!cobradas.length) return null
+      const ts = Date.now()
+      setUsuarios((prev) => prev.map((x) => (!cobradas.some((c) => c.u.id === x.id) ? x : { ...x, historial: x.historial.map((p) => (set.has(facturaId(x.id, p.mes, p.anio)) ? { ...p, estado: 'Pagada', fechaPago: ts } : p)) })))
+      const predios = [...new Set(cobradas.map((c) => c.u.id))]
+      const primero = cobradas[0].u
+      return nuevoPago({
+        clienteId: primero.id,
+        cliente: primero.nombre,
+        facturaIds: cobradas.map((c) => c.f.id),
+        concepto: predios.length > 1 ? `${cobradas.length} facturas de ${predios.length} predios (${predios.join(', ')})` : `Facturas ${cobradas.map((c) => c.f.periodo).join(', ')}`,
+        monto: cobradas.reduce((s, c) => s + c.f.monto, 0),
+        ...datos,
+      })
+    },
+    [usuarios, nuevoPago],
+  )
+
   const reactivar = useCallback(
     (id: string, datos: DatosPago) => {
       const u = usuarios.find((x) => x.id === id)!
@@ -176,8 +199,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const quitarTarifa = useCallback((t: TarifaCRA) => { borrarTarifa(t); setUsuarios((u) => [...u]) }, [])
 
   const value = useMemo(
-    () => ({ usuarios, pagos, facturas, resumen, crearUsuario, editarUsuario, cortar, reactivar, pagarFactura, periodoLectura, cierrePeriodo, lecturas, registrarLectura, borrarLectura, facturarPeriodo, medidores, alarmas, sincronizar, aplicarTarifa, quitarTarifa }),
-    [usuarios, pagos, facturas, resumen, crearUsuario, editarUsuario, cortar, reactivar, pagarFactura, periodoLectura, cierrePeriodo, lecturas, registrarLectura, borrarLectura, facturarPeriodo, medidores, alarmas, sincronizar, aplicarTarifa, quitarTarifa],
+    () => ({ usuarios, pagos, facturas, resumen, crearUsuario, editarUsuario, cortar, reactivar, pagarFactura, pagarFacturas, periodoLectura, cierrePeriodo, lecturas, registrarLectura, borrarLectura, facturarPeriodo, medidores, alarmas, sincronizar, aplicarTarifa, quitarTarifa }),
+    [usuarios, pagos, facturas, resumen, crearUsuario, editarUsuario, cortar, reactivar, pagarFactura, pagarFacturas, periodoLectura, cierrePeriodo, lecturas, registrarLectura, borrarLectura, facturarPeriodo, medidores, alarmas, sincronizar, aplicarTarifa, quitarTarifa],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

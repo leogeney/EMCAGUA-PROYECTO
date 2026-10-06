@@ -44,10 +44,10 @@ export function useAlertas(): Alerta[] {
     const cajaAyerAbierta = pagos.some((p) => iso(new Date(p.timestamp)) === ayerIso) && !cierres.some((c) => c.fecha === ayerIso)
     const morosos = usuarios.filter((u) => u.estado === 'Activo' && resumen(u).vencido)
     const faltan = usuarios.filter((u) => u.estado === 'Activo').length - Object.keys(lecturas).length
-    const b = balanceHidrico(usuarios, 2)
-    const ianc = b[b.length - 1]?.ianc ?? 0
     const nominaMes = periodos[claveNomina(hoy.getFullYear(), hoy.getMonth() + 1)]
     const diasCierre = Math.ceil((cierrePeriodo.getTime() - hoy.getTime()) / 86_400_000)
+    const b = balanceHidrico(usuarios, 2)
+    const ianc = b[b.length - 1]?.ianc ?? 0
     const periodo = nombrePeriodo(periodoLectura.mes, periodoLectura.anio)
 
     const out: Alerta[] = []

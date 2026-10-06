@@ -8,7 +8,8 @@ import type { Empleado, Liquidacion } from './nomina'
 import type { Pqr, Usuario } from './types'
 import { cop, num } from '../utils/format'
 import { cfg, lineaContacto } from './config'
-import { crearDocx, firmas, p, pMixto, tabla } from '../utils/docx'
+import { crearDocx, filaImagenTexto, firmas, imagenInline, p, pMixto, tabla } from '../utils/docx'
+import { qrPng } from '../utils/qr'
 
 export type Grupo = 'Suscriptores' | 'Cartera y cobro' | 'Nómina y personal' | 'Oficios y comunicaciones'
 export type Formato = 'carta' | 'certificado' | 'memorando' | 'acta' | 'comunicado'
@@ -38,6 +39,8 @@ export type Datos = {
   gerente: Empleado
   u?: Usuario
   r?: Resumen
+  /** Todos los predios del mismo propietario (incluye u). */
+  predios?: { u: Usuario; r: Resumen }[]
   e?: Empleado
   liq?: Liquidacion
   pqr?: Pqr
@@ -77,7 +80,8 @@ const sumarDias = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.g
 const iso = (d: Date) => d.toISOString().slice(0, 10)
 const firmaGerente = (d: Datos) => ({ nombre: d.gerente.nombre, cargo: 'Gerente' })
 const sr = (nombre: string) => `Señor(a)\n${nombre}`
-const predio = (u: Usuario) => `${u.barrio}, ${EMPRESA.ciudad}`
+const predio = (u: Usuario) => `${u.direccion ? `${u.direccion}, ` : ''}barrio ${u.barrio}, ${EMPRESA.ciudad}`
+const cc = (u: Usuario) => (u.cedula ? `, identificado(a) con cédula No. ${u.cedula.replace(/\B(?=(\d{3})+(?!\d))/g, '.')}` : '')
 const ultimoPeriodo = (u: Usuario) => { const p = u.historial[u.historial.length - 1]; return p ? nombrePeriodo(p.mes, p.anio) : '—' }
 const antiguedad = (desde: string, hoy: Date) => {
   const a = new Date(`${desde}T00:00:00`)
@@ -104,10 +108,29 @@ export const PLANTILLAS: Plantilla[] = [
     generar: (d) => ({
       titulo: 'PAZ Y SALVO',
       asunto: `Paz y salvo — ${d.u!.nombre}`,
-      cuerpo: `La suscrita gerencia de ${EMPRESA.nombre}\n\nCERTIFICA:\n\nQue el(la) señor(a) ${d.u!.nombre.toUpperCase()}, suscriptor(a) No. ${d.u!.id}, del predio ubicado en el barrio ${predio(d.u!)}, estrato ${d.u!.estrato}, con medidor ${d.u!.medidor}, se encuentra a PAZ Y SALVO por concepto de los servicios de acueducto y alcantarillado hasta el periodo de ${ultimoPeriodo(d.u!)}.\n\nSe expide a solicitud del interesado, con destino a ${d.v.destino || 'quien interese'}, en ${EMPRESA.ciudad}, a los ${fechaLarga(d.hoy)}.`,
+      cuerpo: `La suscrita gerencia de ${EMPRESA.nombre}\n\nCERTIFICA:\n\nQue el(la) señor(a) ${d.u!.nombre.toUpperCase()}${cc(d.u!)}, suscriptor(a) No. ${d.u!.id}, del predio ubicado en ${predio(d.u!)}, estrato ${d.u!.estrato}, con medidor ${d.u!.medidor}, se encuentra a PAZ Y SALVO por concepto de los servicios de acueducto y alcantarillado hasta el periodo de ${ultimoPeriodo(d.u!)}.\n\nSe expide a solicitud del interesado, con destino a ${d.v.destino || 'quien interese'}, en ${EMPRESA.ciudad}, a los ${fechaLarga(d.hoy)}.`,
       firmas: [firmaGerente(d)],
     }),
     guiaIA: 'un certificado de paz y salvo de servicios públicos',
+  },
+  {
+    id: 'paz-salvo-propietario', nombre: 'Paz y salvo del propietario', descripcion: 'Para quien tiene varias casas: certifica que no debe en ninguno de sus predios.', grupo: 'Suscriptores', prefijo: 'PSP', formato: 'certificado', sujeto: 'suscriptor',
+    campos: [{ k: 'destino', label: 'Con destino a', placeholder: 'Ej: Notaría, banco', def: 'quien interese' }],
+    bloqueo: (d) => {
+      const deben = (d.predios ?? []).filter((x) => x.r.deuda > 0)
+      return deben.length ? `${d.u!.nombre} debe en ${deben.length} predio(s): ${deben.map((x) => `${x.u.direccion || x.u.id} (${cop(x.r.deuda)})`).join(', ')}. No se puede expedir paz y salvo general.` : null
+    },
+    generar: (d) => {
+      const ps = d.predios ?? [{ u: d.u!, r: d.r! }]
+      return {
+        titulo: 'PAZ Y SALVO',
+        asunto: `Paz y salvo general — ${d.u!.nombre}`,
+        cuerpo: `La suscrita gerencia de ${EMPRESA.nombre}\n\nCERTIFICA:\n\nQue el(la) señor(a) ${d.u!.nombre.toUpperCase()}${cc(d.u!)}, propietario(a) de ${ps.length === 1 ? 'un (1) predio' : `${ps.length} predios`} con servicio de acueducto y alcantarillado, se encuentra a PAZ Y SALVO por todo concepto${ps.length > 1 ? ' en cada uno de ellos' : ''}.\n\nSe expide a solicitud del interesado, con destino a ${d.v.destino || 'quien interese'}, en ${EMPRESA.ciudad}, a los ${fechaLarga(d.hoy)}.\n\nDetalle de los predios:`,
+        tabla: { columnas: ['Suscriptor', 'Dirección', 'Estrato', 'Estado'], filas: ps.map((x) => [x.u.id, `${x.u.direccion || '—'} (${x.u.barrio})`, String(x.u.estrato), 'Paz y salvo']) },
+        firmas: [firmaGerente(d)],
+      }
+    },
+    guiaIA: 'un certificado de paz y salvo general de un propietario con varios predios',
   },
   {
     id: 'cert-suscriptor', nombre: 'Certificado de suscriptor', descripcion: 'Constancia de que el predio tiene el servicio y su estado actual.', grupo: 'Suscriptores', prefijo: 'CS', formato: 'certificado', sujeto: 'suscriptor',
@@ -117,7 +140,7 @@ export const PLANTILLAS: Plantilla[] = [
       return {
         titulo: 'CERTIFICADO',
         asunto: `Certificado de suscriptor — ${u.nombre}`,
-        cuerpo: `La suscrita gerencia de ${EMPRESA.nombre}\n\nCERTIFICA:\n\nQue el(la) señor(a) ${u.nombre.toUpperCase()} figura como suscriptor(a) No. ${u.id} de los servicios de acueducto y alcantarillado en el predio ubicado en el barrio ${predio(u)}, estrato ${u.estrato}, con medidor No. ${u.medidor}${desde ? `, con registros de facturación desde ${nombrePeriodo(desde.mes, desde.anio)}` : ''}.\n\nA la fecha el servicio se encuentra ${u.estado === 'Activo' ? 'ACTIVO' : 'SUSPENDIDO'}, con un consumo promedio de ${num(d.r!.consumoPromedio, 1)} m³ mensuales${d.r!.deuda > 0 ? ` y un saldo pendiente de ${cop(d.r!.deuda)}` : ' y sin saldos pendientes'}.\n\nSe expide a solicitud del interesado, con destino a ${d.v.destino || 'quien interese'}, a los ${fechaLarga(d.hoy)}.`,
+        cuerpo: `La suscrita gerencia de ${EMPRESA.nombre}\n\nCERTIFICA:\n\nQue el(la) señor(a) ${u.nombre.toUpperCase()} figura como suscriptor(a) No. ${u.id} de los servicios de acueducto y alcantarillado en el predio ubicado en ${predio(u)}, estrato ${u.estrato}, con medidor No. ${u.medidor}${desde ? `, con registros de facturación desde ${nombrePeriodo(desde.mes, desde.anio)}` : ''}.\n\nA la fecha el servicio se encuentra ${u.estado === 'Activo' ? 'ACTIVO' : 'SUSPENDIDO'}, con un consumo promedio de ${num(d.r!.consumoPromedio, 1)} m³ mensuales${d.r!.deuda > 0 ? ` y un saldo pendiente de ${cop(d.r!.deuda)}` : ' y sin saldos pendientes'}.\n\nSe expide a solicitud del interesado, con destino a ${d.v.destino || 'quien interese'}, a los ${fechaLarga(d.hoy)}.`,
         firmas: [firmaGerente(d)],
       }
     },
@@ -366,7 +389,9 @@ async function logo() {
 }
 
 /** Cuerpo del documento en WordprocessingML (mismo orden que la vista previa). */
-function cuerpoDocx(b: Borrador, consecutivo: string, fecha: Date, formato: Formato) {
+export type Verif = { url: string; codigo: string }
+
+function cuerpoDocx(b: Borrador, consecutivo: string, fecha: Date, formato: Formato, verif?: Verif) {
   const out: string[] = [p(consecutivo, { alin: 'right', tam: 8, color: '666666', antes: 120 })]
   if (formato === 'carta') {
     out.push(p(`${EMPRESA.ciudad.split(',')[0]}, ${fechaLarga(fecha)}`, { despues: 280 }))
@@ -388,19 +413,27 @@ function cuerpoDocx(b: Borrador, consecutivo: string, fecha: Date, formato: Form
   if (b.pie) out.push(p(b.pie, { b: true, tam: 12, alin: 'right' }))
   if (b.despedida) out.push(p(b.despedida, { antes: 120 }))
   out.push(firmas(b.firmas))
+  if (verif) {
+    out.push(p('', { despues: 240 }))
+    out.push(filaImagenTexto(imagenInline('rQr', 0.95, 0.95), [
+      p('Documento verificable', { b: true, tam: 9, color: VERDE, despues: 20 }),
+      p('Escanee el código con la cámara del celular para comprobar que este documento es auténtico y no ha sido modificado.', { tam: 8, color: '555555', despues: 20 }),
+      pMixto([['Código de seguridad: ', false], [verif.codigo, true]], { tam: 8, color: '333333', despues: 0 }),
+    ].join('')))
+  }
   return out.join('')
 }
 
 /** Descarga el documento como .docx real, con el logo en el encabezado de cada página. */
-export async function descargarWord(nombre: string, b: Borrador, consecutivo: string, fecha: Date, formato: Formato) {
-  const blob = crearDocx(cuerpoDocx(b, consecutivo, fecha, formato), {
+export async function descargarWord(nombre: string, b: Borrador, consecutivo: string, fecha: Date, formato: Formato, verif?: Verif) {
+  const blob = crearDocx(cuerpoDocx(b, consecutivo, fecha, formato, verif), {
     logo: await logo(),
     logoAncho: 0.62,
     logoAlto: 0.7,
     titulo: EMPRESA.nombre,
     lineas: [EMPRESA.razon, EMPRESA.ciudad, EMPRESA.contacto].filter(Boolean),
     color: VERDE,
-  })
+  }, verif ? [{ rid: 'rQr', datos: await qrPng(verif.url) }] : [])
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url

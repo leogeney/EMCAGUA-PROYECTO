@@ -90,6 +90,17 @@ export function firmas(lista: { nombre: string; cargo: string }[]) {
   return `${p('', { despues: 900 })}<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/>${SIN_BORDES}</w:tblPr><w:tblGrid>${lista.map(() => '<w:gridCol/>').join('')}</w:tblGrid><w:tr>${lista.map(tc).join('')}${lista.length === 1 ? `<w:tc><w:tcPr><w:tcW w:w="${ancho}" w:type="pct"/></w:tcPr>${p('', { despues: 0 })}</w:tc>` : ''}</w:tr></w:tbl>`
 }
 
+/** Imagen dentro del cuerpo (p. ej. el QR de verificación). `rid` debe coincidir con una de `imagenes` en crearDocx. */
+export function imagenInline(rid: string, anchoIn: number, altoIn: number, id = 2) {
+  const EMU = 914400, cx = Math.round(anchoIn * EMU), cy = Math.round(altoIn * EMU)
+  return `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${id}" name="${rid}"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="${id}" name="${rid}.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`
+}
+
+/** Tabla de dos columnas sin bordes: izquierda XML libre (imagen), derecha párrafos. */
+export function filaImagenTexto(imagenXml: string, textoXml: string, anchoImgDxa = 1700) {
+  return `<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/>${SIN_BORDES}</w:tblPr><w:tblGrid><w:gridCol w:w="${anchoImgDxa}"/><w:gridCol w:w="${9400 - anchoImgDxa}"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="${anchoImgDxa}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/></w:pPr>${imagenXml}</w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="${9400 - anchoImgDxa}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>${textoXml}</w:tc></w:tr></w:tbl>`
+}
+
 type Encabezado = { logo?: Uint8Array; logoAncho: number; logoAlto: number; titulo: string; lineas: string[]; color: string }
 
 function encabezadoXml(h: Encabezado) {
@@ -106,14 +117,14 @@ function encabezadoXml(h: Encabezado) {
 const NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"'
 
 /** Arma el .docx: el encabezado (logo + membrete) se repite en todas las páginas. */
-export function crearDocx(cuerpoXml: string, h: Encabezado): Blob {
+export function crearDocx(cuerpoXml: string, h: Encabezado, imagenes: { rid: string; datos: Uint8Array }[] = []): Blob {
   const decl = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
   const documento = `${decl}<w:document ${NS}><w:body>${cuerpoXml}<w:sectPr><w:headerReference w:type="default" r:id="rHeader"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="2300" w:right="1300" w:bottom="1300" w:left="1500" w:header="500" w:footer="500" w:gutter="0"/></w:sectPr></w:body></w:document>`
   const header = `${decl}<w:hdr ${NS}>${encabezadoXml(h)}</w:hdr>`
   const estilos = `${decl}<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial" w:eastAsia="Arial"/><w:color w:val="222222"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="es-CO"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="160" w:line="300" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>`
   const tipos = `${decl}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>`
   const rels = `${decl}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`
-  const docRels = `${decl}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`
+  const docRels = `${decl}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>${imagenes.map((i) => `<Relationship Id="${i.rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${i.rid}.png"/>`).join('')}</Relationships>`
   const headerRels = `${decl}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${h.logo ? '<Relationship Id="rLogo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/logo.png"/>' : ''}</Relationships>`
   return zip([
     { nombre: '[Content_Types].xml', datos: tipos },
@@ -124,5 +135,6 @@ export function crearDocx(cuerpoXml: string, h: Encabezado): Blob {
     { nombre: 'word/_rels/header1.xml.rels', datos: headerRels },
     { nombre: 'word/styles.xml', datos: estilos },
     ...(h.logo ? [{ nombre: 'word/media/logo.png', datos: h.logo }] : []),
+    ...imagenes.map((i) => ({ nombre: `word/media/${i.rid}.png`, datos: i.datos })),
   ])
 }

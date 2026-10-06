@@ -16,6 +16,7 @@ const EMPRESA: CampoTexto[] = [
   { k: 'correo', label: 'Correo', placeholder: 'Ej: atencion@emcagua.gov.co' },
   { k: 'gerente', label: 'Gerente / representante legal', placeholder: 'Nombre completo' },
   { k: 'horario', label: 'Horario de atención', ancho: true },
+  { k: 'urlPublica', label: 'Dirección del sistema en internet (para los QR de verificación)', placeholder: 'Ej: https://emcagua.gov.co · vacío = la dirección actual', ancho: true },
 ]
 
 export default function Configuracion() {

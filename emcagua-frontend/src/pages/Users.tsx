@@ -19,6 +19,7 @@ import { formatCutoff, getNextCutoff } from '../utils/cutoff'
 import { cop, fechaCorta, num } from '../utils/format'
 import { exportarXls } from '../utils/excel'
 import { whatsappUrl } from '../utils/whatsapp'
+import { etiquetaPredio, formatoCedula, limpiarCedula, otrosPredios, propietarios, saldoPropietario } from '../data/propietarios'
 
 /** Lectura del periodo elegido ('actual' = la última registrada). */
 function lecturaEn(u: Usuario, periodo: string) {
@@ -29,7 +30,7 @@ function lecturaEn(u: Usuario, periodo: string) {
 
 type Tab = 'todos' | 'aldia' | 'deuda' | 'vencidos' | 'cortados' | 'alto'
 const POR_PAGINA = 10
-const FORM_VACIO: UsuarioForm = { id: '', nombre: '', barrio: 'Centro', estrato: 1, medidor: '', telefono: '' }
+const FORM_VACIO: UsuarioForm = { id: '', nombre: '', cedula: '', direccion: '', barrio: 'Centro', estrato: 1, medidor: '', telefono: '' }
 
 function validarTelefono(tel: string) {
   const limpio = tel.replace(/\D/g, '')
@@ -55,6 +56,9 @@ const I = {
   pin: 'M17.657 16.657L13.414 20.9a2 2 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0zM15 11a3 3 0 11-6 0 3 3 0 016 0z',
   phone: 'M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.04 11.04 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z',
   gauge: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
+  casa: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6',
+  id: 'M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2',
+  user: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z',
   tag: 'M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z',
 }
 
@@ -141,7 +145,7 @@ export default function Users() {
   const [params, setParams] = useSearchParams()
 
   const [tab, setTab] = useState<Tab>(params.get('filtro') === 'vencidos' ? 'vencidos' : 'todos')
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(() => params.get('q') ?? '')
   const [barrio, setBarrio] = useState('Todos')
   const [estrato, setEstrato] = useState('Todos')
   const [periodo, setPeriodo] = useState('actual')
@@ -157,10 +161,12 @@ export default function Users() {
   const [reactivando, setReactivando] = useState<Usuario | null>(null)
 
   useEffect(() => {
-    if (params.has('nuevo') || params.has('filtro')) setParams({}, { replace: true })
+    if (params.has('nuevo') || params.has('filtro') || params.has('q')) setParams({}, { replace: true })
   }, [params, setParams])
 
   const perfil = usuarios.find((u) => u.id === perfilId) ?? null
+  const duenos = useMemo(() => propietarios(usuarios), [usuarios])
+  const nPredios = (u: Usuario) => duenos.get(limpiarCedula(u.cedula))?.predios.length ?? 1
 
   const periodoDe = (u: Usuario) => lecturaEn(u, periodo)
   const etiquetaPeriodo = periodo === 'actual' ? 'último periodo' : (() => { const { anio, mes } = leerPeriodo(periodo); return nombrePeriodo(mes, anio) })()
@@ -184,7 +190,8 @@ export default function Users() {
     const consumo = (u: Usuario) => lecturaEn(u, periodo)?.consumo ?? 0
     const res = usuarios.filter((u) => {
       const r = resumen(u)
-      if (q && !u.nombre.toLowerCase().includes(q) && !u.id.includes(q) && !u.medidor.toLowerCase().includes(q) && !u.telefono.replace(/\D/g, '').includes(q.replace(/\D/g, '') || '§')) return false
+      const qn = q.replace(/\D/g, '')
+      if (q && !u.nombre.toLowerCase().includes(q) && !u.id.includes(q) && !u.medidor.toLowerCase().includes(q) && !u.direccion.toLowerCase().includes(q) && !(u.ocupante?.nombre.toLowerCase().includes(q)) && !(qn.length >= 4 && (u.telefono.replace(/\D/g, '').includes(qn) || limpiarCedula(u.cedula).includes(qn)))) return false
       if (barrio !== 'Todos' && u.barrio !== barrio) return false
       if (estrato !== 'Todos' && String(u.estrato) !== estrato) return false
       if (tab === 'aldia' && r.pagosDebe > 0) return false
@@ -213,7 +220,7 @@ export default function Users() {
   const abrirNuevo = () => { setEditingId(null); setForm(FORM_VACIO); setFormError({}); setFormOpen(true) }
   const abrirEditar = (u: Usuario) => {
     setEditingId(u.id)
-    setForm({ id: u.id, nombre: u.nombre, barrio: u.barrio, estrato: u.estrato, medidor: u.medidor, telefono: u.telefono })
+    setForm({ id: u.id, nombre: u.nombre, cedula: u.cedula, direccion: u.direccion, ocupante: u.ocupante, barrio: u.barrio, estrato: u.estrato, medidor: u.medidor, telefono: u.telefono })
     setFormError({})
     setPerfilId(null)
     setFormOpen(true)
@@ -225,16 +232,28 @@ export default function Users() {
     if (telErr || idErr) return setFormError({ telefono: telErr || undefined, id: idErr || undefined })
     const medidor = form.medidor && form.medidor !== 'MED-' ? form.medidor : `MED-${form.id}`
     const tel = form.telefono.replace(/\D/g, '').replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3')
+    const cedula = limpiarCedula(form.cedula)
+    const ocupante = form.ocupante?.nombre.trim() ? { nombre: form.ocupante.nombre.trim(), telefono: form.ocupante.telefono.trim() } : undefined
+    const datos = { nombre: form.nombre, cedula, direccion: form.direccion.trim(), ocupante, barrio: form.barrio, estrato: form.estrato, medidor, telefono: tel }
     if (editingId) {
-      editarUsuario(editingId, { nombre: form.nombre, barrio: form.barrio, estrato: form.estrato, medidor, telefono: tel })
-      toast('Usuario actualizado', form.nombre)
+      const antes = usuarios.find((x) => x.id === editingId)!
+      editarUsuario(editingId, datos)
+      // El nombre y el teléfono son del propietario: se actualizan en todos sus predios
+      const otros = otrosPredios(usuarios, { ...antes, cedula })
+      otros.forEach((o) => editarUsuario(o.id, { nombre: form.nombre, cedula, direccion: o.direccion, ocupante: o.ocupante, barrio: o.barrio, estrato: o.estrato, medidor: o.medidor, telefono: tel }))
+      toast('Predio actualizado', otros.length ? `${form.nombre} · también en sus otros ${otros.length} predio(s)` : form.nombre)
     } else {
-      const err = crearUsuario({ ...form, medidor, telefono: tel })
+      const err = crearUsuario({ id: form.id, ...datos })
       if (err) return setFormError({ id: err })
-      toast('Usuario creado', `${form.nombre} · ${medidor}`)
+      toast('Predio creado', `${form.nombre} · ${medidor}${mismoDueno.length ? ` · ahora tiene ${mismoDueno.length + 1} predios` : ''}`)
     }
     setFormOpen(false)
   }
+
+  // Propietario que ya existe con esa cédula (para agregarle otro predio)
+  const cedForm = limpiarCedula(form.cedula)
+  const mismoDueno = cedForm.length >= 6 ? usuarios.filter((x) => limpiarCedula(x.cedula) === cedForm && x.id !== editingId) : []
+  const usarDueno = () => { const d = mismoDueno[0]; setForm((f) => ({ ...f, nombre: d.nombre, telefono: d.telefono })) }
 
   const enviarMasivo = () => {
     setConfirmMasivo(false)
@@ -247,9 +266,9 @@ export default function Users() {
       `EMCAGUA-Usuarios-${new Date().toISOString().slice(0, 10)}`,
       'EMCAGUA APC — Usuarios',
       `${filtered.length} usuarios · consumo ${etiquetaPeriodo} · generado ${new Date().toLocaleString('es-CO')}`,
-      ['ID', 'Nombre', 'Medidor', 'Teléfono', 'Barrio', 'Estrato', 'Consumo (m³)', 'Saldo', 'Facturas pendientes', 'Servicio'],
-      filtered.map((u) => { const r = resumen(u); return [u.id, u.nombre, u.medidor, u.telefono, u.barrio, u.estrato, periodoDe(u)?.consumo ?? 0, r.deuda, r.pagosDebe, u.estado] }),
-      [6, 7, 8],
+      ['Código', 'Propietario', 'Cédula', 'Dirección', 'Medidor', 'Teléfono', 'Barrio', 'Estrato', 'Consumo (m³)', 'Saldo', 'Facturas pendientes', 'Servicio', 'Vive en el predio'],
+      filtered.map((u) => { const r = resumen(u); return [u.id, u.nombre, u.cedula, u.direccion, u.medidor, u.telefono, u.barrio, u.estrato, periodoDe(u)?.consumo ?? 0, r.deuda, r.pagosDebe, u.estado, u.ocupante?.nombre ?? ''] }),
+      [8, 9, 10],
     )
 
   const TABS: { key: Tab; label: string; dot?: string }[] = [
@@ -270,11 +289,11 @@ export default function Users() {
         <div>
           <p className="text-xs font-semibold tracking-[0.14em] text-primary-700 uppercase mb-2">Suscriptores</p>
           <h1 className="text-[28px] font-extrabold tracking-tight text-dark leading-none">Usuarios</h1>
-          <p className="text-sm text-gray-500 mt-2">{usuarios.length} suscriptores en El Carmen y Guamalito · próximo corte {formatCutoff(getNextCutoff())}</p>
+          <p className="text-sm text-gray-500 mt-2">{usuarios.length} predios de {duenos.size} propietarios en El Carmen y Guamalito · próximo corte {formatCutoff(getNextCutoff())}</p>
         </div>
         <div className="flex gap-2">
           <button onClick={exportar} className="btn-secondary"><Ico d={I.down} /> Exportar</button>
-          <button onClick={abrirNuevo} className="btn-primary"><Ico d={I.plus} /> Nuevo usuario</button>
+          <button onClick={abrirNuevo} className="btn-primary"><Ico d={I.plus} /> Nuevo predio</button>
         </div>
       </div>
 
@@ -285,7 +304,7 @@ export default function Users() {
             <span className="h-9 w-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0"><Ico d={I.warn} /></span>
             <div className="min-w-0">
               <p className="text-sm font-semibold text-dark">{vencidos.length} {vencidos.length === 1 ? 'usuario pasó' : 'usuarios pasaron'} la fecha de corte con saldo pendiente</p>
-              <p className="text-xs text-gray-500 truncate">{vencidos.map((u) => u.nombre).join(', ')}</p>
+              <p className="text-xs text-gray-500 truncate">{[...new Set(vencidos.map((u) => u.nombre))].join(', ')}</p>
             </div>
           </div>
           <div className="flex gap-2 shrink-0">
@@ -319,7 +338,7 @@ export default function Users() {
         <div className="px-4 sm:px-5 py-4 flex flex-col lg:flex-row gap-2.5 lg:items-center border-b border-gray-100 bg-gray-soft/40">
           <div className="relative flex-1 min-w-0">
             <Ico d={I.search} className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nombre, ID, medidor o teléfono" className="w-full h-10 pl-10 pr-9 rounded-xl border border-gray-200 bg-white text-sm text-dark placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-colors" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nombre, cédula, código, dirección o teléfono" className="w-full h-10 pl-10 pr-9 rounded-xl border border-gray-200 bg-white text-sm text-dark placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-colors" />
             {search && <button onClick={() => setSearch('')} aria-label="Borrar búsqueda" className="absolute right-2.5 top-1/2 -translate-y-1/2 h-6 w-6 rounded-md text-gray-400 hover:text-dark hover:bg-gray-100 flex items-center justify-center"><Ico d={I.x} className="w-3.5 h-3.5" /></button>}
           </div>
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
@@ -376,8 +395,11 @@ export default function Users() {
                   <div className="flex items-center gap-3 min-w-0">
                     <Avatar nombre={u.nombre} estado={u.estado === 'Cortado' ? 'Cortado' : paraCorte ? 'Alerta' : 'Activo'} />
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-dark truncate group-hover:text-secondary transition-colors">{u.nombre}</p>
-                      <p className="text-xs text-gray-400 truncate"><span className="font-mono">{u.medidor}</span> · {u.telefono}</p>
+                      <p className="text-sm font-semibold text-dark truncate group-hover:text-secondary transition-colors flex items-center gap-2">
+                        <span className="truncate">{u.nombre}</span>
+                        {nPredios(u) > 1 && <button onClick={(e) => { e.stopPropagation(); setSearch(limpiarCedula(u.cedula)); setTab('todos') }} title="Ver todos sus predios" className="shrink-0 inline-flex items-center gap-1 h-5 px-1.5 rounded-md bg-secondary/10 text-secondary text-[10px] font-bold hover:bg-secondary hover:text-white"><Ico d={I.casa} className="w-3 h-3" />{nPredios(u)} predios</button>}
+                      </p>
+                      <p className="text-xs text-gray-400 truncate"><span className="font-mono">{u.id}</span> · {u.direccion || u.telefono}{u.ocupante ? ` · vive ${u.ocupante.nombre}` : ''}</p>
                     </div>
                   </div>
 
@@ -441,22 +463,36 @@ export default function Users() {
       </section>
 
       {/* Crear / editar */}
-      <Modal open={formOpen} onClose={() => setFormOpen(false)} title={editingId ? 'Editar usuario' : 'Nuevo usuario'} subtitle={editingId ? `ID ${editingId}` : 'Registra un nuevo suscriptor del servicio'}>
+      <Modal open={formOpen} onClose={() => setFormOpen(false)} title={editingId ? 'Editar predio' : 'Nuevo predio'} subtitle={editingId ? `Código ${editingId}` : 'Cada casa o local es un suscriptor con su medidor y su factura'}>
         <form onSubmit={guardar} className="px-6 py-5 space-y-4">
           <div className="flex items-center gap-4 p-3 rounded-2xl bg-gray-soft">
             <Avatar nombre={form.nombre || '?'} size={48} />
             <div className="min-w-0">
-              <p className="text-sm font-bold text-dark truncate">{form.nombre || 'Nombre del suscriptor'}</p>
+              <p className="text-sm font-bold text-dark truncate">{form.nombre || 'Nombre del propietario'}</p>
               <p className="text-xs text-gray-500">{form.barrio} · Estrato {form.estrato} · {cop(TARIFA[form.estrato])}/m³</p>
             </div>
           </div>
-          <div>
-            <label className="field-label" htmlFor="f-nombre">Nombre completo</label>
-            <input id="f-nombre" required autoFocus value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} placeholder="Ej: Juan Pérez" className="field" />
+          <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400 -mb-1">Propietario</p>
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] gap-4">
+            <div>
+              <label className="field-label" htmlFor="f-ced">Cédula o NIT</label>
+              <input id="f-ced" required autoFocus inputMode="numeric" value={form.cedula} onChange={(e) => setForm({ ...form, cedula: e.target.value.replace(/[^\d.]/g, '') })} placeholder="1.091.234.567" className="field" />
+            </div>
+            <div>
+              <label className="field-label" htmlFor="f-nombre">Nombre completo</label>
+              <input id="f-nombre" required value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} placeholder="Ej: Juan Pérez" className="field" />
+            </div>
           </div>
+          {mismoDueno.length > 0 && (
+            <div className="rounded-xl bg-secondary/5 border border-secondary/20 px-3.5 py-2.5 text-sm">
+              <p className="text-dark"><b>{mismoDueno[0].nombre}</b> ya tiene {mismoDueno.length} predio(s): {mismoDueno.map(etiquetaPredio).join(' · ')}.</p>
+              <p className="text-xs text-gray-500 mt-0.5">{editingId ? 'Este predio queda con el mismo propietario.' : 'Este se agrega como otro predio suyo, con su propio medidor y factura.'}</p>
+              {(form.nombre !== mismoDueno[0].nombre || form.telefono !== mismoDueno[0].telefono) && <button type="button" onClick={usarDueno} className="text-xs font-semibold text-secondary hover:underline mt-1">Usar su nombre y teléfono</button>}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="field-label" htmlFor="f-id">ID / Cédula</label>
+              <label className="field-label" htmlFor="f-id">Código de suscriptor</label>
               <input
                 id="f-id"
                 required
@@ -483,6 +519,11 @@ export default function Users() {
               {formError.telefono && <p className="text-[11px] text-red-600 mt-1">{formError.telefono}</p>}
             </div>
           </div>
+          <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400 -mb-1 pt-1">Predio</p>
+          <div>
+            <label className="field-label" htmlFor="f-dir">Dirección del predio</label>
+            <input id="f-dir" required value={form.direccion} onChange={(e) => setForm({ ...form, direccion: e.target.value })} placeholder="Ej: Calle 5 # 4-20" className="field" />
+          </div>
           <div>
             <p className="field-label">Barrio</p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -508,11 +549,24 @@ export default function Users() {
               <span className="inline-flex items-center px-3 rounded-l-xl border border-r-0 border-gray-200 bg-gray-soft text-sm font-mono font-bold text-gray-500">MED-</span>
               <input id="f-med" value={form.medidor.replace(/^MED-/, '')} onChange={(e) => setForm({ ...form, medidor: `MED-${e.target.value.replace(/\D/g, '')}` })} placeholder={form.id || '10300'} className="field rounded-l-none" />
             </div>
-            <p className="text-[11px] text-gray-400 mt-1">Por defecto usa el mismo número del ID</p>
+            <p className="text-[11px] text-gray-400 mt-1">Por defecto usa el mismo número del código</p>
+          </div>
+          <div className="rounded-xl border border-gray-100 p-3">
+            <label className="flex items-center gap-2 text-sm font-medium text-dark cursor-pointer">
+              <input type="checkbox" checked={!!form.ocupante} onChange={(e) => setForm({ ...form, ocupante: e.target.checked ? { nombre: '', telefono: '' } : undefined })} className="accent-secondary h-4 w-4" />
+              En este predio vive otra persona (arrendatario)
+            </label>
+            {form.ocupante && (
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <input value={form.ocupante.nombre} onChange={(e) => setForm({ ...form, ocupante: { ...form.ocupante!, nombre: e.target.value } })} placeholder="Nombre de quien vive" className="field" />
+                <input value={form.ocupante.telefono} inputMode="tel" onChange={(e) => setForm({ ...form, ocupante: { ...form.ocupante!, telefono: e.target.value } })} placeholder="Teléfono" className="field" />
+                <p className="col-span-2 text-[11px] text-gray-500">La deuda sigue siendo del predio. A esta persona le llegan los avisos de cortes programados y fugas.</p>
+              </div>
+            )}
           </div>
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={() => setFormOpen(false)} className="btn-secondary flex-1">Cancelar</button>
-            <button type="submit" className="btn-primary flex-1">{editingId ? 'Guardar cambios' : 'Crear usuario'}</button>
+            <button type="submit" className="btn-primary flex-1">{editingId ? 'Guardar cambios' : 'Crear predio'}</button>
           </div>
         </form>
       </Modal>
@@ -526,6 +580,7 @@ export default function Users() {
             onEditar={() => abrirEditar(perfil)}
             onCortar={() => setConfirmCorte(perfil)}
             onReactivar={() => setReactivando(perfil)}
+            onAbrir={(id) => setPerfilId(id)}
           />
         )}
       </Drawer>
@@ -604,8 +659,10 @@ function Acciones({ u, r, paraCorte, onEditar, onCortar, onReactivar }: { u: Usu
   )
 }
 
-function Perfil({ usuario: u, onClose, onEditar, onCortar, onReactivar }: { usuario: Usuario; onClose: () => void; onEditar: () => void; onCortar: () => void; onReactivar: () => void }) {
-  const { resumen } = useData()
+function Perfil({ usuario: u, onClose, onEditar, onCortar, onReactivar, onAbrir }: { usuario: Usuario; onClose: () => void; onEditar: () => void; onCortar: () => void; onReactivar: () => void; onAbrir: (id: string) => void }) {
+  const { resumen, usuarios } = useData()
+  const otros = otrosPredios(usuarios, u)
+  const total = saldoPropietario([u, ...otros], resumen)
   const r = resumen(u)
   const paraCorte = u.estado === 'Activo' && r.vencido
   const facturas = [...facturasDe(u)].reverse()
@@ -617,14 +674,15 @@ function Perfil({ usuario: u, onClose, onEditar, onCortar, onReactivar }: { usua
       <div className="relative shrink-0 bg-gradient-to-br from-secondary to-secondary-700 text-white px-6 pt-5 pb-6">
         <div className="absolute inset-0 opacity-[0.07] pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 85% 20%, #fff 0, transparent 45%), radial-gradient(circle at 10% 110%, #8AC43A 0, transparent 40%)' }} />
         <div className="relative flex items-start justify-between">
-          <span className="text-[11px] font-semibold tracking-[0.14em] uppercase text-white/60">Perfil del suscriptor</span>
+          <span className="text-[11px] font-semibold tracking-[0.14em] uppercase text-white/60">Predio del suscriptor</span>
           <button onClick={onClose} aria-label="Cerrar" className="h-8 w-8 -mr-2 -mt-1 rounded-lg hover:bg-white/10 flex items-center justify-center text-white/70 hover:text-white"><Ico d={I.x} /></button>
         </div>
         <div className="relative flex items-center gap-4 mt-3">
           <div className="rounded-full ring-4 ring-white/15"><Avatar nombre={u.nombre} size={60} /></div>
           <div className="min-w-0">
             <h2 className="text-xl font-extrabold tracking-tight truncate">{u.nombre}</h2>
-            <p className="text-sm text-white/70">ID {u.id} · <span className="font-mono">{u.medidor}</span></p>
+            <p className="text-sm text-white/70">Código {u.id} · <span className="font-mono">{u.medidor}</span></p>
+            <p className="text-xs text-white/60 truncate">{u.direccion}</p>
             <div className="mt-2"><EstadoPill estado={u.estado} paraCorte={paraCorte} /></div>
           </div>
         </div>
@@ -651,11 +709,35 @@ function Perfil({ usuario: u, onClose, onEditar, onCortar, onReactivar }: { usua
 
         {/* Datos */}
         <div className="rounded-2xl border border-gray-100 divide-y divide-gray-100">
-          <Fila icon={I.pin} k="Barrio" v={u.barrio} />
+          <Fila icon={I.id} k="Propietario" v={`${u.nombre} · C.C. ${formatoCedula(u.cedula) || '—'}`} />
+          <Fila icon={I.pin} k="Dirección" v={`${u.direccion || '—'} · ${u.barrio}`} />
+          {u.ocupante && <Fila icon={I.user} k="Vive ahí" v={`${u.ocupante.nombre}${u.ocupante.telefono ? ` · ${u.ocupante.telefono}` : ''}`} />}
           <Fila icon={I.tag} k="Estrato y tarifa" v={`Estrato ${u.estrato} · ${cop(TARIFA[u.estrato])} por m³`} />
           <Fila icon={I.phone} k="Teléfono" v={u.telefono} />
           <Fila icon={I.gauge} k="Medidor" v={<span className="font-mono">{u.medidor}</span>} />
         </div>
+
+        {/* Otros predios del mismo dueño */}
+        {otros.length > 0 && (
+          <div>
+            <div className="flex items-baseline justify-between mb-2">
+              <h3 className="text-sm font-bold text-dark">Otros predios de {u.nombre.split(' ')[0]} <span className="text-gray-400 font-medium">· {otros.length}</span></h3>
+              {total.deuda > 0 && <span className={`text-xs font-semibold ${total.vencido ? 'text-red-600' : 'text-amber-700'}`}>Debe en total {cop(total.deuda)}</span>}
+            </div>
+            <ul className="rounded-2xl border border-gray-100 divide-y divide-gray-100 overflow-hidden">
+              {otros.map((o) => { const ro = resumen(o); return (
+                <li key={o.id}>
+                  <button onClick={() => onAbrir(o.id)} className="w-full text-left flex items-center gap-3 px-4 py-2.5 hover:bg-gray-soft/60">
+                    <span className="h-8 w-8 rounded-lg bg-gray-soft text-gray-500 flex items-center justify-center shrink-0"><Ico d={I.casa} /></span>
+                    <span className="flex-1 min-w-0"><span className="block text-sm font-medium text-dark truncate">{etiquetaPredio(o)}</span><span className="block text-[11px] text-gray-400">Código {o.id} · estrato {o.estrato} · {o.estado}{o.ocupante ? ` · vive ${o.ocupante.nombre}` : ''}</span></span>
+                    <span className={`text-sm font-semibold tabular-nums ${ro.deuda ? (ro.vencido ? 'text-red-600' : 'text-dark') : 'text-green-700'}`}>{ro.deuda ? cop(ro.deuda) : 'Al día'}</span>
+                  </button>
+                </li>
+              ) })}
+            </ul>
+            <p className="text-[11px] text-gray-400 mt-1.5">Cada predio tiene su medidor, su estrato y su factura. En Pagos y caja se pueden cobrar juntos.</p>
+          </div>
+        )}
 
         {/* Consumo */}
         {hist.length > 1 && (

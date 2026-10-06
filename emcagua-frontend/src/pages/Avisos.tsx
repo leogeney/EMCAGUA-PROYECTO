@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useData } from '../data/DataContext'
 import { BARRIOS, COSTO_RECONEXION } from '../data/constants'
 import type { Usuario } from '../data/types'
@@ -6,6 +7,12 @@ import type { Resumen } from '../data/billing'
 import WhatsAppIcon from '../components/WhatsAppIcon'
 import Ico from '../components/ui/Icon'
 import { cop, fechaCorta } from '../utils/format'
+import { limpiarCedula } from '../data/propietarios'
+
+/** A quién le llega el mensaje: el dueño (con todas sus casas del grupo) o quien vive en el predio. */
+type Destinatario = { key: string; nombre: string; telefono: string; predios: Usuario[]; ocupante: boolean }
+/** Avisos de plata van al propietario, uno solo aunque tenga varias casas. Los de la casa (corte, fuga) a quien vive ahí. */
+const DEL_DUENO = new Set(['recordatorio', 'mora', 'reconexion', 'libre'])
 
 type Segmento = { id: string; nombre: string; filtro: (u: Usuario, r: Resumen, fugas: Set<string>) => boolean }
 type Plantilla = { id: string; nombre: string; texto: string }
@@ -40,29 +47,59 @@ export default function Avisos() {
   const [q, setQ] = useState('')
 
   const seg = segmentos.find((s) => s.id === segId)!
-  const lista = usuarios.filter((u) => seg.filtro(u, resumen(u), fugas)).filter((u) => !q || u.nombre.toLowerCase().includes(q.toLowerCase()))
+  const predios = usuarios.filter((u) => seg.filtro(u, resumen(u), fugas))
+  const lista: Destinatario[] = (() => {
+    if (DEL_DUENO.has(plantId)) {
+      const m = new Map<string, Destinatario>()
+      for (const u of predios) {
+        const k = limpiarCedula(u.cedula) || u.id
+        const d = m.get(k)
+        if (d) d.predios.push(u)
+        else m.set(k, { key: k, nombre: u.nombre, telefono: u.telefono, predios: [u], ocupante: false })
+      }
+      return [...m.values()]
+    }
+    return predios.map((u) => ({ key: u.id, nombre: u.ocupante?.nombre ?? u.nombre, telefono: u.ocupante?.telefono || u.telefono, predios: [u], ocupante: !!u.ocupante }))
+  })().filter((d) => !q || d.nombre.toLowerCase().includes(q.toLowerCase()) || d.predios.some((u) => u.nombre.toLowerCase().includes(q.toLowerCase())))
   const portal = `${window.location.origin}/portal`
 
-  const mensaje = (u: Usuario) => {
-    const r = resumen(u)
+  const mensaje = (d: Destinatario) => {
+    const u = d.predios[0]
+    const rs = d.predios.map((x) => ({ x, r: resumen(x) }))
+    const deuda = rs.reduce((s, y) => s + y.r.deuda, 0)
+    const venc = rs.flatMap((y) => y.r.pendientes).sort((a, b) => a.vencimiento.getTime() - b.vencimiento.getTime())[0]
+    const detalle = d.predios.length > 1 ? `\n\nDetalle por predio:\n${rs.map((y) => `• ${y.x.direccion || y.x.id} (${y.x.barrio}): ${y.r.deuda ? cop(y.r.deuda) : 'al día'}`).join('\n')}` : ''
     return texto
-      .replace(/\{nombre\}/g, u.nombre.split(' ')[0])
-      .replace(/\{deuda\}/g, cop(r.deuda))
-      .replace(/\{facturas\}/g, String(r.pagosDebe))
-      .replace(/\{vence\}/g, r.pendientes[0] ? fechaCorta(r.pendientes[0].vencimiento) : '—')
+      .replace(/\{nombre\}/g, d.nombre.split(' ')[0])
+      .replace(/\{deuda\}/g, cop(deuda))
+      .replace(/\{facturas\}/g, String(rs.reduce((s, y) => s + y.r.pagosDebe, 0)))
+      .replace(/\{vence\}/g, venc ? fechaCorta(venc.vencimiento) : '—')
       .replace(/\{barrio\}/g, u.barrio)
       .replace(/\{medidor\}/g, u.medidor)
       .replace(/\{reconexion\}/g, cop(COSTO_RECONEXION))
       .replace(/\{portal\}/g, portal)
       .replace(/\{fecha\}/g, vars.fecha || '[fecha]')
-      .replace(/\{horario\}/g, vars.horario || '[horario]')
+      .replace(/\{horario\}/g, vars.horario || '[horario]') + detalle
   }
-  const enlace = (u: Usuario) => {
-    const t = u.telefono.replace(/\D/g, '')
-    return `https://wa.me/${t.startsWith('57') ? t : `57${t}`}?text=${encodeURIComponent(mensaje(u))}`
+  const enlace = (d: Destinatario) => {
+    const t = d.telefono.replace(/\D/g, '')
+    return `https://wa.me/${t.startsWith('57') ? t : `57${t}`}?text=${encodeURIComponent(mensaje(d))}`
   }
   const elegirPlantilla = (id: string) => { setPlantId(id); setTexto(PLANTILLAS.find((p) => p.id === id)!.texto) }
-  const hechos = lista.filter((u) => enviados.has(`${plantId}-${u.id}`)).length
+  // Enlace directo desde una recomendación: /avisos?segmento=fugas&plantilla=fuga
+  const [sp, setSp] = useSearchParams()
+  useEffect(() => {
+    const seg = sp.get('segmento'), pl = sp.get('plantilla')
+    if (!seg && !pl) return
+    const t = setTimeout(() => {
+      if (seg) setSegId(seg)
+      const p = PLANTILLAS.find((x) => x.id === pl)
+      if (p) { setPlantId(p.id); setTexto(p.texto) }
+      setSp({}, { replace: true })
+    }, 0)
+    return () => clearTimeout(t)
+  }, [sp, setSp])
+  const hechos = lista.filter((d) => enviados.has(`${plantId}-${d.key}`)).length
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
@@ -98,7 +135,7 @@ export default function Avisos() {
         <section className="card overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap gap-3 items-center justify-between">
             <div>
-              <p className="font-bold text-dark">{lista.length} destinatario(s)</p>
+              <p className="font-bold text-dark">{lista.length} destinatario(s){lista.length !== predios.length ? ` · ${predios.length} predios` : ''}</p>
               <div className="flex items-center gap-2 mt-1"><div className="h-1.5 w-40 rounded-full bg-gray-soft overflow-hidden"><div className="h-full bg-[#25D366]" style={{ width: `${lista.length ? (hechos / lista.length) * 100 : 0}%` }} /></div><span className="text-xs text-gray-500">{hechos} enviados</span></div>
             </div>
             <div className="relative"><Ico d={D.search} className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar" className="field h-10 pl-9 w-48" /></div>
@@ -110,18 +147,18 @@ export default function Avisos() {
             </div>
           )}
           <ul className="divide-y divide-gray-100 max-h-[560px] overflow-y-auto">
-            {lista.map((u) => {
-              const r = resumen(u)
-              const k = `${plantId}-${u.id}`
+            {lista.map((d) => {
+              const deuda = d.predios.reduce((s, x) => s + resumen(x).deuda, 0)
+              const k = `${plantId}-${d.key}`
               const hecho = enviados.has(k)
               return (
-                <li key={u.id} className="px-5 py-3 flex items-center gap-3">
+                <li key={d.key} className="px-5 py-3 flex items-center gap-3">
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-dark truncate">{u.nombre}</p>
-                    <p className="text-xs text-gray-400">{u.telefono} · {u.barrio}{r.deuda > 0 ? ` · debe ${cop(r.deuda)}` : ''}</p>
+                    <p className="font-semibold text-dark truncate">{d.nombre}{d.predios.length > 1 && <span className="ml-2 badge-muted">{d.predios.length} predios · un solo mensaje</span>}</p>
+                    <p className="text-xs text-gray-400 truncate">{d.telefono} · {d.ocupante ? `vive en el predio de ${d.predios[0].nombre}` : d.predios.map((x) => x.direccion || x.barrio).join(' · ')}{deuda > 0 ? ` · debe ${cop(deuda)}` : ''}</p>
                   </div>
                   {hecho && <span className="badge-ok"><Ico d={D.check} className="w-3 h-3" /> Enviado</span>}
-                  <a href={enlace(u)} target="_blank" rel="noreferrer" onClick={() => setEnviados((s) => new Set(s).add(k))} className={`h-9 px-3 rounded-xl text-sm font-semibold flex items-center gap-1.5 ${hecho ? 'bg-gray-300 text-white hover:bg-gray-400' : 'bg-[#25D366] text-white hover:bg-[#1ebe5a]'}`}><WhatsAppIcon className="w-4 h-4" /> {hecho ? 'Reenviar' : 'Enviar'}</a>
+                  <a href={enlace(d)} target="_blank" rel="noreferrer" onClick={() => setEnviados((s) => new Set(s).add(k))} className={`h-9 px-3 rounded-xl text-sm font-semibold flex items-center gap-1.5 ${hecho ? 'bg-gray-300 text-white hover:bg-gray-400' : 'bg-[#25D366] text-white hover:bg-[#1ebe5a]'}`}><WhatsAppIcon className="w-4 h-4" /> {hecho ? 'Reenviar' : 'Enviar'}</a>
                 </li>
               )
             })}

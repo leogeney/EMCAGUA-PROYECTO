@@ -83,12 +83,7 @@ export default function Lecturas() {
         <button onClick={sync} className="btn-secondary shrink-0"><Ico d={D.sync} /> Sincronizar</button>
       </div>
 
-      <CierreMensual cierre={cierrePeriodo} periodo={nombrePeriodo(periodoLectura.mes, periodoLectura.anio)} ahora={ahora} resumen={[
-        `${remotas} con lectura automática`,
-        ...(manuales.length ? [`${manuales.length} con lectura en sitio`] : []),
-        ...(sinLectura.length ? [`${sinLectura.length} sin lectura → por promedio (Ley 142, art. 146)`] : []),
-        `${cortados} suspendidos`,
-      ]} />
+      <CierreMensual cierre={cierrePeriodo} periodo={nombrePeriodo(periodoLectura.mes, periodoLectura.anio)} ahora={ahora} conLectura={remotas + manuales.length} porPromedio={sinLectura.length} suspendidos={cortados} />
 
       {/* Indicadores */}
       <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
@@ -209,27 +204,40 @@ export default function Lecturas() {
   )
 }
 
-/** El periodo se cierra solo cada mes, el mismo día en que se generan las facturas. */
-function CierreMensual({ cierre, periodo, ahora, resumen }: { cierre: Date; periodo: string; ahora: number; resumen: string[] }) {
+function Cifra({ n, t, c }: { n: number; t: string; c: string }) {
+  return <div className={`rounded-xl px-3 py-2.5 ${c}`}><p className="text-xl font-extrabold tabular-nums leading-none">{n}</p><p className="text-xs mt-1">{t}</p></div>
+}
+
+/** Cuándo se facturan las lecturas de este mes y cómo quedaría cada usuario. */
+function CierreMensual({ cierre, periodo, ahora, conLectura, porPromedio, suspendidos }: { cierre: Date; periodo: string; ahora: number; conLectura: number; porPromedio: number; suspendidos: number }) {
   const inicio = new Date(cierre); inicio.setMonth(inicio.getMonth() - 1)
-  const total = cierre.getTime() - inicio.getTime()
-  const avance = Math.min(1, Math.max(0, (ahora - inicio.getTime()) / total))
+  const avance = Math.min(1, Math.max(0, (ahora - inicio.getTime()) / (cierre.getTime() - inicio.getTime())))
   const dias = Math.max(0, Math.ceil((cierre.getTime() - ahora) / 86_400_000))
-  const fechaTxt = `${['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'][cierre.getDay()]} ${cierre.getDate()} de ${cierre.toLocaleDateString('es-CO', { month: 'long' })}`
+  const dia = (d: Date) => `${['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'][d.getDay()]} ${d.getDate()} de ${d.toLocaleDateString('es-CO', { month: 'long' })}`
+  const vence = new Date(cierre); vence.setDate(vence.getDate() + 14)
   return (
-    <section className="card p-5 mb-5 flex flex-col lg:flex-row lg:items-center gap-5">
-      <div className="flex items-center gap-4 lg:w-[380px] shrink-0">
-        <span className="h-12 w-12 rounded-2xl bg-secondary/10 text-secondary flex items-center justify-center shrink-0"><Ico d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" className="w-6 h-6" /></span>
-        <div>
-          <p className="text-[11px] uppercase tracking-wider text-gray-400 font-semibold">Cierre automático de {periodo}</p>
-          <p className="text-lg font-extrabold text-dark first-letter:uppercase">{fechaTxt}</p>
-          <p className="text-xs text-gray-500">{dias === 0 ? 'Hoy se generan las facturas' : `Faltan ${dias} día(s)`} · 14 días antes del vencimiento (primer viernes)</p>
+    <section className="card p-5 mb-5">
+      <div className="flex flex-col lg:flex-row lg:items-center gap-5">
+        <div className="flex items-center gap-4 lg:w-[400px] shrink-0">
+          <span className="h-12 w-12 rounded-2xl bg-secondary/10 text-secondary flex items-center justify-center shrink-0"><Ico d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" className="w-6 h-6" /></span>
+          <div>
+            <p className="text-sm text-gray-500">Las facturas de {periodo.toLowerCase()} se hacen solas el</p>
+            <p className="text-lg font-extrabold text-dark first-letter:uppercase">{dia(cierre)}</p>
+            <p className="text-xs text-gray-500">{dias === 0 ? 'Es hoy' : `Faltan ${dias} día(s)`} · el usuario tendrá hasta el {dia(vence)} para pagar</p>
+          </div>
+        </div>
+        <div className="flex-1 grid grid-cols-3 gap-2">
+          <Cifra n={conLectura} t="con lectura del medidor" c="bg-green-50 text-green-800" />
+          <Cifra n={porPromedio} t="sin lectura: se cobra el promedio" c={porPromedio ? 'bg-amber-50 text-amber-800' : 'bg-gray-soft text-gray-600'} />
+          <Cifra n={suspendidos} t="con servicio cortado" c="bg-gray-soft text-gray-600" />
         </div>
       </div>
-      <div className="flex-1">
-        <div className="h-2 rounded-full bg-gray-soft overflow-hidden"><div className="h-full rounded-full bg-secondary" style={{ width: `${avance * 100}%` }} /></div>
-        <p className="text-xs text-gray-500 mt-2">Ese día el sistema toma la última lectura de cada medidor y genera las facturas, igual que cada mes. Si hoy cerrara: {resumen.join(' · ')}.</p>
+      <div className="mt-4 flex items-center gap-3 text-[11px] text-gray-400">
+        <span className="whitespace-nowrap">Avance del mes</span>
+        <div className="flex-1 h-1.5 rounded-full bg-gray-soft overflow-hidden"><div className="h-full rounded-full bg-secondary" style={{ width: `${avance * 100}%` }} /></div>
+        <span className="whitespace-nowrap">{Math.round(avance * 100)}%</span>
       </div>
+      {porPromedio > 0 && <p className="text-xs text-gray-500 mt-2">Para que esos {porPromedio} no se cobren por promedio, toma la lectura en sitio antes de esa fecha (filtro «Sin comunicación»).</p>}
     </section>
   )
 }

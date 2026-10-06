@@ -21,6 +21,8 @@ export type Config = {
   umbralAlto: number // m³ por periodo
   baseCaja: number // $ base inicial de caja
   metaIanc: number // fracción (0.3 = 30 %)
+  /** Dirección de internet del sistema (va en los QR). Vacío = la dirección actual del navegador. */
+  urlPublica: string
 }
 
 export const CONFIG_INICIAL: Config = {
@@ -38,6 +40,7 @@ export const CONFIG_INICIAL: Config = {
   umbralAlto: 30,
   baseCaja: 200000,
   metaIanc: 0.3,
+  urlPublica: '',
 }
 
 const KEY = 'emcagua_config'

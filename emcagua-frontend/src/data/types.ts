@@ -11,9 +11,21 @@ export type Periodo = {
 
 export type EstadoServicio = 'Activo' | 'Cortado'
 
+/** Quien vive en el predio cuando no es el dueño (arrendatario). Recibe los avisos. */
+export type Ocupante = { nombre: string; telefono: string }
+
+/**
+ * Un Usuario es un PREDIO (suscriptor): tiene su medidor, su estrato y su factura.
+ * Un mismo propietario (misma cédula) puede tener varios predios.
+ */
 export type Usuario = {
   id: string
+  /** Nombre del propietario */
   nombre: string
+  /** Cédula o NIT del propietario: agrupa sus predios */
+  cedula: string
+  direccion: string
+  ocupante?: Ocupante
   barrio: string
   estrato: 1 | 2 | 3
   medidor: string
@@ -59,6 +71,9 @@ export type Factura = {
 export type UsuarioForm = {
   id: string
   nombre: string
+  cedula: string
+  direccion: string
+  ocupante?: Ocupante
   barrio: string
   estrato: 1 | 2 | 3
   medidor: string

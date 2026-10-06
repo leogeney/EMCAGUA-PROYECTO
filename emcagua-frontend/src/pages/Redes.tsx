@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Link } from 'react-router-dom'
-import { configOllama, estadoOllama, redactarOllama } from '../data/asistente'
-import { dibujar, FORMATOS, parsearPieza, SISTEMA_REDES, TIPOS, tipoPieza, type Detalle, type Icono, type Pieza } from '../data/redes'
+import { calentarOllama, redactarJsonStream } from '../data/asistente'
+import { useAsistente } from '../data/AsistenteContext'
+import { borradorRapido, dibujar, ESTILOS, FORMATOS, parsearPieza, piezaParcial, SISTEMA_REDES, TIPOS, tipoPieza, type Detalle, type Estilo, type Icono, type Pieza } from '../data/redes'
 import { fechaLarga } from '../data/documentos'
 import { cfg } from '../data/config'
 import { ILUSTRACIONES, ilustracion, svgUrl } from '../data/ilustraciones'
@@ -14,6 +16,7 @@ const D = {
   copy: 'M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z',
   plus: 'M12 4v16m8-8H4',
   x: 'M6 18L18 6M6 6l12 12',
+  stop: 'M21 12a9 9 0 11-18 0 9 9 0 0118 0z M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z',
   img: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z',
 }
 
@@ -34,9 +37,14 @@ export default function Redes() {
   const [ilusImg, setIlusImg] = useState<HTMLImageElement>()
   const [logo, setLogo] = useState<HTMLImageElement>()
   const [idea, setIdea] = useState('')
-  const [ia, setIa] = useState<{ ok: boolean; modelo: string } | null>(null)
+  const asis = useAsistente()
+  const ia = asis.ia ? { ok: asis.ia.ok && !!asis.modelo, modelo: asis.modelo } : null
   const [pensando, setPensando] = useState(false)
   const [fuentes, setFuentes] = useState(false)
+  const [estilo, setEstiloState] = useState<Estilo>(() => { try { return (localStorage.getItem('emc_redes_estilo') as Estilo) || 'elegante' } catch { return 'elegante' } })
+  const setEstilo = (e: Estilo) => { setEstiloState(e); try { localStorage.setItem('emc_redes_estilo', e) } catch { /* */ } }
+  const [segundos, setSegundos] = useState(0)
+  const control = useRef<AbortController | null>(null)
   const lienzo = useRef<HTMLCanvasElement>(null)
 
   const tipo = tipoPieza(tipoId)
@@ -44,9 +52,7 @@ export default function Redes() {
 
   useEffect(() => {
     cargarImagen('/logo_circulo.png').then(setLogo).catch(() => {})
-    Promise.all(['500', '600', '800'].map((p) => document.fonts.load(`${p} 40px Inter`))).finally(() => setFuentes(true))
-    const { url, modelo } = configOllama()
-    estadoOllama(url).then((e) => setIa({ ok: e.ok && e.modelos.length > 0, modelo: e.modelos.includes(modelo) ? modelo : e.modelos[0] ?? '' }))
+    Promise.all([...['500', '600', '700', '800', 'italic 400'].map((p) => document.fonts.load(`${p} 40px Inter`)), document.fonts.load('600 40px Fraunces')]).finally(() => setFuentes(true))
   }, [])
 
   useEffect(() => {
@@ -61,25 +67,54 @@ export default function Redes() {
     c.width = formato.w
     c.height = formato.h
     const ctx = c.getContext('2d')
-    if (ctx) dibujar(ctx, { formato, tipo, pieza, logo, imagen, esFoto: ilusId === 'foto', contacto })
-  }, [formato, tipo, pieza, logo, imagen, ilusId, contacto, fuentes])
+    if (ctx) dibujar(ctx, { formato, tipo, pieza, logo, imagen, esFoto: ilusId === 'foto', contacto, estilo })
+  }, [formato, tipo, pieza, logo, imagen, ilusId, contacto, fuentes, estilo])
+
+  // Deja el modelo cargado al entrar, para que la primera pieza no espere
+  useEffect(() => { if (asis.ia?.ok && asis.modelo) calentarOllama(asis.url, asis.modelo) }, [asis.ia?.ok, asis.modelo, asis.url])
 
   const cambiarTipo = (id: string) => { setTipoId(id); setPieza(tipoPieza(id).base()); if (ilusId !== 'foto') setIlusId(tipoPieza(id).ilustracion) }
+  // Enlace directo desde una recomendación: /redes?tipo=ahorro
+  const [sp, setSp] = useSearchParams()
+  useEffect(() => {
+    const id = sp.get('tipo')
+    if (!id) return
+    const t = setTimeout(() => { if (TIPOS.some((x) => x.id === id)) { setTipoId(id); setPieza(tipoPieza(id).base()); setIlusId(tipoPieza(id).ilustracion) } setSp({}, { replace: true }) }, 0)
+    return () => clearTimeout(t)
+  }, [sp, setSp])
   const set = <K extends keyof Pieza>(k: K, v: Pieza[K]) => setPieza((p) => ({ ...p, [k]: v }))
   const setDet = (i: number, d: Partial<Detalle>) => set('detalles', pieza.detalles.map((x, j) => (j === i ? { ...x, ...d } : x)))
 
   const generar = async () => {
-    if (!ia?.ok || !idea.trim()) return
-    setPensando(true)
+    if (!idea.trim() || pensando) return
+    // 1. Al instante: tipo, fecha, hora y lugar salen del texto, sin esperar a la IA
+    const rapido = borradorRapido(idea)
+    const t = rapido.tipo && rapido.tipo !== tipoId ? tipoPieza(rapido.tipo) : tipo
+    if (t.id !== tipoId) { setTipoId(t.id); if (ilusId !== 'foto') setIlusId(t.ilustracion) }
+    const base = t.base()
+    const inicial: Pieza = { ...base, detalles: rapido.detalles.length ? rapido.detalles : base.detalles }
+    setPieza(inicial)
+    if (!ia?.ok) { toast('Borrador listo', 'Saqué fecha, hora y lugar de tu texto. Ajusta lo demás a mano.'); return }
+    // 2. La IA escribe y la pieza se va llenando en vivo
+    setPensando(true); setSegundos(0)
+    const t0 = Date.now()
+    const reloj = setInterval(() => setSegundos(Math.round((Date.now() - t0) / 1000)), 500)
+    control.current = new AbortController()
     try {
-      const { url } = configOllama()
-      const r = await redactarOllama(url, ia.modelo, `${SISTEMA_REDES}${fechaLarga(new Date())}.`, `Tipo de pieza: ${tipo.guia}.\nLo que quiero comunicar: ${idea}`, true)
-      setPieza(parsearPieza(r, tipo.base()))
-      toast('Textos generados', 'Revísalos antes de publicar.')
-    } catch {
-      toast('No se pudo generar', 'Revisa que Ollama esté abierto o intenta de nuevo.')
+      const pedido = `Pieza: ${t.guia}.\nIdea: ${idea.trim()}${rapido.detalles.length ? `\nDatos ya confirmados: ${rapido.detalles.map((d) => `${d.icono}: ${d.texto}`).join('; ')}` : ''}`
+      const r = await redactarJsonStream(asis.url, ia.modelo, `${SISTEMA_REDES}${fechaLarga(new Date())}.`, pedido, (parcial) => setPieza(piezaParcial(parcial, inicial)), control.current.signal)
+      const final = parsearPieza(r, inicial)
+      // Fecha, hora y lugar que vienen del texto del usuario son más confiables que los de la IA
+      const iconosIA = new Set(final.detalles.map((d) => d.icono))
+      const faltan = rapido.detalles.filter((d) => !iconosIA.has(d.icono))
+      setPieza({ ...final, detalles: [...faltan, ...final.detalles].slice(0, 4) })
+      toast(`Listo en ${Math.max(1, Math.round((Date.now() - t0) / 1000))} s`, 'Revisa los textos antes de publicar.')
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === 'AbortError')) toast('No se pudo generar', 'Revisa que Ollama esté abierto o intenta de nuevo.')
     } finally {
+      clearInterval(reloj)
       setPensando(false)
+      control.current = null
     }
   }
 
@@ -131,9 +166,13 @@ export default function Redes() {
           <div className="card p-5 space-y-3 bg-gradient-to-br from-secondary/5 to-primary/5">
             <p className="font-semibold text-dark flex items-center gap-1.5"><Ico d={D.spark} className="w-4 h-4 text-secondary" /> Crear con IA</p>
             <textarea value={idea} onChange={(e) => setIdea(e.target.value)} rows={3} placeholder="Ej: el jueves no habrá agua en La Esperanza de 7 de la mañana a 3 de la tarde porque vamos a cambiar una válvula" className="field py-2.5 h-auto text-sm bg-white" />
-            <button disabled={!ia?.ok || pensando || !idea.trim()} onClick={generar} className="btn-primary w-full">{pensando ? 'Creando…' : 'Generar textos'}</button>
+            {pensando ? (
+              <button onClick={() => control.current?.abort()} className="btn-secondary w-full"><Ico d={D.stop} /> Escribiendo… {segundos} s · Detener</button>
+            ) : (
+              <button disabled={!idea.trim()} onClick={generar} className="btn-primary w-full"><Ico d={D.spark} /> {ia?.ok ? 'Crear aviso' : 'Crear borrador'}</button>
+            )}
             <p className="text-[11px] text-gray-500">
-              {ia === null ? 'Buscando la IA local…' : ia.ok ? `IA local · ${ia.modelo}. Escribe los textos; el diseño lo arma el sistema.` : <>La IA local no está activa. <Link to="/asistente" className="font-semibold text-secondary hover:underline">Configúrala en Asistente IA</Link>. Igual puedes llenar los textos a mano.</>}
+              {ia === null ? 'Buscando la IA local…' : ia.ok ? `IA local · ${ia.modelo}. Fecha, hora y lugar aparecen al instante; la IA completa los textos en vivo.` : <>La IA local no está activa. <Link to="/asistente" className="font-semibold text-secondary hover:underline">Configúrala en Asistente IA</Link>. Igual puedes llenar los textos a mano.</>}
             </p>
           </div>
 
@@ -186,6 +225,11 @@ export default function Redes() {
 
         {/* Vista previa */}
         <div className="space-y-4 min-w-0 lg:sticky lg:top-4">
+          <div className="flex p-1 bg-white border border-gray-100 rounded-xl shadow-sm w-fit">
+            {ESTILOS.map((e) => (
+              <button key={e.id} onClick={() => setEstilo(e.id)} title={e.descripcion} className={`px-3 h-9 rounded-lg text-sm font-semibold whitespace-nowrap transition-colors ${estilo === e.id ? 'bg-secondary text-white' : 'text-gray-500 hover:text-dark'}`}>{e.nombre}</button>
+            ))}
+          </div>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex p-1 bg-white border border-gray-100 rounded-xl shadow-sm">
               {FORMATOS.map((f) => (

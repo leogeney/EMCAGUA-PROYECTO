@@ -12,6 +12,8 @@ import Ico from '../components/ui/Icon'
 import { copCompacto, pct } from '../utils/format'
 import { cuentaActual, getUsername } from '../utils/session'
 import { useAlertas, I } from '../data/alertas'
+import { useRecomendaciones } from '../data/recomendaciones'
+import { PanelRecomendaciones } from '../components/asistente/Recomendaciones'
 
 export default function MiDia() {
   const { usuarios, pagos, resumen, alarmas } = useData()
@@ -30,7 +32,9 @@ export default function MiDia() {
   const balance = balanceHidrico(usuarios, 2)
   const ianc = balance[balance.length - 1]?.ianc ?? 0
 
-  const items = useAlertas()
+  const recos = useRecomendaciones()
+  // Lo que Gotita ya recomienda (mora, pérdidas, compras) no se repite en «Para atender»
+  const items = useAlertas().filter((a) => !/^(mora|ianc|stock)-/.test(a.id))
 
   const agenda = [
     ...[0, 1].map((i) => { const d = new Date(hoy.getFullYear(), hoy.getMonth() - 1 + i, 1); return { fecha: vencimientoPeriodo(d.getMonth() + 1, d.getFullYear()), titulo: 'Vencimiento de facturas', detalle: 'Primer viernes del mes' } }),
@@ -58,6 +62,7 @@ export default function MiDia() {
       </section>
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-5 items-start">
+        <div className="space-y-6">
         <section>
           <h2 className="text-sm font-bold text-dark mb-3">Para atender</h2>
           {items.length === 0 ? (
@@ -74,6 +79,8 @@ export default function MiDia() {
             </div>
           )}
         </section>
+        <PanelRecomendaciones recos={recos} />
+        </div>
 
         <div className="space-y-5">
           <section className="card p-5">

@@ -1,18 +1,22 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useData } from '../data/DataContext'
 import { useNomina } from '../data/NominaContext'
 import { usePqr } from '../data/PqrContext'
 import { useDocumentos, type Emitido } from '../data/DocumentosContext'
 import { nombrePeriodo } from '../data/billing'
 import { liquidar, NOVEDAD_VACIA } from '../data/nomina'
-import { configOllama, estadoOllama, redactarOllama } from '../data/asistente'
+import { redactarOllamaStream } from '../data/asistente'
+import { useAsistente } from '../data/AsistenteContext'
 import { descargarWord, EMPRESA, fechaLarga, GRUPOS, PLANTILLAS, plantilla, sugerirFecha, type Borrador, type Datos, type Formato, type Grupo, type Plantilla } from '../data/documentos'
 import Ico from '../components/ui/Icon'
 import Modal from '../components/ui/Modal'
 import { useToast } from '../components/ui/Toast'
 import { cop, fecha } from '../utils/format'
-import { puede } from '../utils/session'
+import { getUsername, puede } from '../utils/session'
+import { otrosPredios } from '../data/propietarios'
+import { anularDocumento, codigoDocumento, urlVerificacion, useRegistroDocs } from '../data/verificacion'
+import Qr from '../components/Qr'
 
 const D = {
   back: 'M10 19l-7-7m0 0l7-7m-7 7h18',
@@ -46,6 +50,14 @@ export default function Documentos() {
   const [id, setId] = useState('')
   const admin = puede('nomina')
   const abrir = (pid: string) => { setId(pid); setVista('editor') }
+  // Enlace directo desde una recomendación: /documentos?plantilla=aviso-cobro
+  const [sp, setSp] = useSearchParams()
+  useEffect(() => {
+    const pid = sp.get('plantilla')
+    if (!pid) return
+    const t = setTimeout(() => { if (PLANTILLAS.some((p) => p.id === pid && (!p.soloAdmin || admin))) abrir(pid); setSp({}, { replace: true }) }, 0)
+    return () => clearTimeout(t)
+  }, [sp, setSp, admin])
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
@@ -119,14 +131,12 @@ function Editor({ p, onVolver }: { p: Plantilla; onVolver: () => void }) {
   })
   const [cuerpo, setCuerpo] = useState<string | null>(null)
   const [instr, setInstr] = useState('')
-  const [ia, setIa] = useState<{ ok: boolean; modelo: string } | null>(null)
+  const asis = useAsistente()
+  const ia = asis.ia ? { ok: asis.ia.ok && !!asis.modelo, modelo: asis.modelo } : null
+  const control = useRef<AbortController | null>(null)
   const [pensando, setPensando] = useState(false)
   const [emitido, setEmitido] = useState<Emitido | null>(null)
 
-  useEffect(() => {
-    const { url, modelo } = configOllama()
-    estadoOllama(url).then((e) => setIa({ ok: e.ok && e.modelos.length > 0, modelo: e.modelos.includes(modelo) ? modelo : e.modelos[0] ?? '' }))
-  }, [])
 
   const u = p.sujeto === 'suscriptor' ? usuarios.find((x) => x.id === sujeto) : undefined
   const e = p.sujeto === 'empleado' ? empleados.find((x) => x.id === sujeto) : undefined
@@ -139,7 +149,7 @@ function Editor({ p, onVolver }: { p: Plantilla; onVolver: () => void }) {
     const n = per ? obtenerPeriodo(per.anio, per.mes).novedades[e.id] ?? NOVEDAD_VACIA : NOVEDAD_VACIA
     liq = liquidar(e, n, parametros)
   }
-  const datos: Datos = { v, hoy, gerente, u, r: u ? resumen(u) : undefined, e, liq, pqr, empleados }
+  const datos: Datos = { v, hoy, gerente, u, r: u ? resumen(u) : undefined, predios: u ? [u, ...otrosPredios(usuarios, u)].map((x) => ({ u: x, r: resumen(x) })) : undefined, e, liq, pqr, empleados }
   const listo = (p.sujeto === 'ninguno' || u || e || pqr) && (p.id !== 'desprendible' || liq)
   const bloqueo = listo ? p.bloqueo?.(datos) ?? null : null
   const generado = listo ? p.generar(datos) : null
@@ -152,18 +162,20 @@ function Editor({ p, onVolver }: { p: Plantilla; onVolver: () => void }) {
   const dirigidoA = u?.nombre ?? e?.nombre ?? pqr?.nombre ?? v.entidad ?? v.nombre ?? v.barrios ?? 'Comunidad'
   const asegurarEmitido = () => {
     if (emitido) return emitido
-    const doc = emitir({ plantillaId: p.id, nombre: p.nombre, dirigidoA: dirigidoA || '—', formato: p.formato, borrador: b! }, p.prefijo)
+    const doc = emitir({ plantillaId: p.id, nombre: p.nombre, dirigidoA: dirigidoA || '—', formato: p.formato, borrador: b!, sujetoId: u?.id ?? e?.id ?? pqr?.radicado }, p.prefijo)
     setEmitido(doc)
     toast('Documento emitido', `${doc.consecutivo} · ${p.nombre}`)
     return doc
   }
   const imprimir = () => { asegurarEmitido(); setTimeout(() => window.print(), 60) }
-  const word = () => { const d = asegurarEmitido(); descargarWord(`${d.consecutivo} ${p.nombre}`, b!, d.consecutivo, new Date(d.ts), p.formato) }
+  const word = () => { const d = asegurarEmitido(); descargarWord(`${d.consecutivo} ${p.nombre}`, b!, d.consecutivo, new Date(d.ts), p.formato, verifDe(d)) }
+  // El QR de la vista previa: el mismo que tendrá el documento al emitirse hoy
+  const codigoPrevio = emitido?.codigo ?? codigoDocumento({ consecutivo, plantillaId: p.id, dirigidoA: dirigidoA || '—', ts: hoy.getTime() })
 
   const pedirIA = async (modo: 'redactar' | 'mejorar') => {
     if (!b || !ia?.ok) return
-    const { url } = configOllama()
     setPensando(true)
+    control.current = new AbortController()
     try {
       const pedido = [
         `Documento: ${p.guiaIA}.`,
@@ -174,17 +186,21 @@ function Editor({ p, onVolver }: { p: Plantilla; onVolver: () => void }) {
         modo === 'mejorar' ? 'Tarea: mejora la redacción del borrador (más claro y formal) sin cambiar hechos, datos ni estructura.' : 'Tarea: redacta el cuerpo completo del documento a partir del borrador y las instrucciones.',
         instr ? `Instrucciones del usuario: ${instr}` : '',
       ].filter(Boolean).join('\n\n')
-      const r = await redactarOllama(url, ia.modelo, SISTEMA_IA, pedido)
-      setCuerpo(r.replace(/\*\*/g, '').replace(/^#+\s*/gm, '').trim())
+      const limpiar = (t: string) => t.replace(/\*\*/g, '').replace(/^#+\s*/gm, '')
+      // Largo máximo según el borrador (≈ 4 caracteres por token, con margen); textos cortos terminan antes
+      const largo = Math.min(900, Math.max(300, Math.round((b.cuerpo.length / 4) * (modo === 'mejorar' ? 1.5 : 2))))
       setEmitido(null)
-    } catch {
-      toast('No pude conectar con Ollama', 'Revisa que esté abierto y prueba en Asistente IA → Configurar.')
+      const r = await redactarOllamaStream(asis.url, ia.modelo, SISTEMA_IA, pedido, (parcial) => setCuerpo(limpiar(parcial)), largo, control.current.signal)
+      setCuerpo(limpiar(r).trim())
+    } catch (err) {
+      if (!(err instanceof DOMException && err.name === 'AbortError')) toast('No pude conectar con Ollama', 'Revisa que esté abierto y prueba en Asistente IA → Configurar.')
     } finally {
       setPensando(false)
+      control.current = null
     }
   }
 
-  const lista = p.sujeto === 'suscriptor' ? suscriptores.filter((x) => !filtro || `${x.nombre} ${x.id} ${x.medidor}`.toLowerCase().includes(filtro.toLowerCase())) : []
+  const lista = p.sujeto === 'suscriptor' ? suscriptores.filter((x) => !filtro || `${x.nombre} ${x.id} ${x.medidor} ${x.cedula} ${x.direccion}`.toLowerCase().includes(filtro.toLowerCase())) : []
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[400px_1fr] gap-5 items-start">
@@ -204,10 +220,10 @@ function Editor({ p, onVolver }: { p: Plantilla; onVolver: () => void }) {
               <label className="field-label">Suscriptor</label>
               <div className="relative mb-2">
                 <Ico d={D.search} className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input value={filtro} onChange={(x) => setFiltro(x.target.value)} placeholder="Buscar nombre, ID o medidor" className="field h-10 pl-9 text-sm" />
+                <input value={filtro} onChange={(x) => setFiltro(x.target.value)} placeholder="Buscar nombre, cédula, código o dirección" className="field h-10 pl-9 text-sm" />
               </div>
               <select value={sujeto} onChange={(x) => cambiarSujeto(x.target.value)} className="field h-auto py-1.5 text-sm" size={Math.min(6, Math.max(2, lista.length))}>
-                {lista.map((x) => { const r = resumen(x); return <option key={x.id} value={x.id}>{x.nombre} · {x.id}{r.deuda > 0 ? ` · debe ${cop(r.deuda)}` : ''}</option> })}
+                {lista.map((x) => { const r = resumen(x); return <option key={x.id} value={x.id}>{x.nombre} · {x.id} · {x.direccion}{r.deuda > 0 ? ` · debe ${cop(r.deuda)}` : ''}</option> })}
               </select>
             </div>
           )}
@@ -252,13 +268,17 @@ function Editor({ p, onVolver }: { p: Plantilla; onVolver: () => void }) {
               <label className="field-label mb-0">Texto del documento</label>
               {cuerpo !== null && <button onClick={() => { setCuerpo(null); setEmitido(null) }} className="text-xs font-semibold text-secondary hover:underline">Restablecer</button>}
             </div>
-            <textarea value={b.cuerpo} onChange={(x) => { setCuerpo(x.target.value); setEmitido(null) }} rows={9} className="field py-2.5 h-auto text-sm leading-relaxed" />
+            <textarea value={b.cuerpo} readOnly={pensando} onChange={(x) => { setCuerpo(x.target.value); setEmitido(null) }} rows={9} className={`field py-2.5 h-auto text-sm leading-relaxed ${pensando ? 'bg-secondary/5' : ''}`} />
             <div className="rounded-2xl bg-gradient-to-br from-secondary/5 to-primary/5 border border-secondary/15 p-3.5 space-y-2.5">
               <p className="text-sm font-semibold text-dark flex items-center gap-1.5"><Ico d={D.spark} className="w-4 h-4 text-secondary" /> Redactar con IA</p>
               <input value={instr} onChange={(x) => setInstr(x.target.value)} placeholder="Opcional: ej. más corto, tono más amable, mencionar la reunión del viernes" className="field h-10 text-sm bg-white" />
               <div className="flex gap-2">
-                <button disabled={!ia?.ok || pensando} onClick={() => pedirIA('redactar')} className="btn-primary h-9 px-3 text-sm flex-1">{pensando ? 'Escribiendo…' : 'Redactar'}</button>
-                <button disabled={!ia?.ok || pensando} onClick={() => pedirIA('mejorar')} className="btn-secondary h-9 px-3 text-sm flex-1">Mejorar texto</button>
+                {pensando ? (
+                  <button onClick={() => control.current?.abort()} className="btn-secondary h-9 px-3 text-sm flex-1">Detener · {b.cuerpo.split(/\s+/).filter(Boolean).length} palabras</button>
+                ) : (<>
+                  <button disabled={!ia?.ok} onClick={() => pedirIA('redactar')} className="btn-primary h-9 px-3 text-sm flex-1">Redactar</button>
+                  <button disabled={!ia?.ok} onClick={() => pedirIA('mejorar')} className="btn-secondary h-9 px-3 text-sm flex-1">Mejorar texto</button>
+                </>)}
               </div>
               <p className="text-[11px] text-gray-500">
                 {ia === null ? 'Buscando la IA local…' : ia.ok ? `IA local · ${ia.modelo}. Revisa siempre el texto antes de emitir.` : <>La IA local no está activa. <Link to="/asistente" className="font-semibold text-secondary hover:underline">Configúrala en Asistente IA</Link>. Sin ella puedes editar el texto a mano.</>}
@@ -280,7 +300,7 @@ function Editor({ p, onVolver }: { p: Plantilla; onVolver: () => void }) {
         {bloqueo && (
           <div className="no-print rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-800 flex items-start gap-2"><Ico d={D.warn} className="w-4 h-4 shrink-0 mt-0.5" />{bloqueo}</div>
         )}
-        {b && <Hoja b={b} consecutivo={consecutivo} fecha={hoy} formato={p.formato} atenuado={!!bloqueo} />}
+        {b && <Hoja b={b} consecutivo={consecutivo} fecha={hoy} formato={p.formato} atenuado={!!bloqueo} verif={{ url: urlVerificacion(consecutivo, codigoPrevio), codigo: codigoPrevio }} />}
       </div>
     </div>
   )
@@ -288,9 +308,13 @@ function Editor({ p, onVolver }: { p: Plantilla; onVolver: () => void }) {
 
 /* ------------------------------------------------------------------ */
 
-function Hoja({ b, consecutivo, fecha: f, formato, atenuado }: { b: Borrador; consecutivo: string; fecha: Date; formato: Formato; atenuado?: boolean }) {
+/** Código y enlace de verificación de un documento emitido (los antiguos sin código se firman igual). */
+const verifDe = (d: Emitido) => { const codigo = d.codigo ?? codigoDocumento(d); return { url: urlVerificacion(d.consecutivo, codigo), codigo } }
+
+function Hoja({ b, consecutivo, fecha: f, formato, atenuado, verif, anulado }: { b: Borrador; consecutivo: string; fecha: Date; formato: Formato; atenuado?: boolean; verif?: { url: string; codigo: string }; anulado?: boolean }) {
   return (
-    <article className={`print-area bg-white rounded-2xl border border-gray-100 shadow-sm px-8 sm:px-14 py-10 text-[13.5px] text-gray-800 leading-relaxed ${atenuado ? 'opacity-40' : ''}`}>
+    <article className={`print-area relative bg-white rounded-2xl border border-gray-100 shadow-sm px-8 sm:px-14 py-10 text-[13.5px] text-gray-800 leading-relaxed ${atenuado ? 'opacity-40' : ''}`}>
+      {anulado && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><span className="-rotate-[24deg] border-[6px] border-red-600/70 text-red-600/70 text-6xl font-black tracking-[0.2em] px-6 py-2 rounded-xl">ANULADO</span></div>}
       <header className="flex items-center gap-3 pb-3 border-b-2 border-secondary">
         <img src="/logo_circulo.png" alt="" className="h-12 w-12 object-contain" />
         <div>
@@ -341,6 +365,16 @@ function Hoja({ b, consecutivo, fecha: f, formato, atenuado }: { b: Borrador; co
           </div>
         ))}
       </div>
+      {verif && (
+        <div className="mt-10 pt-4 border-t border-dashed border-gray-200 flex items-center gap-4">
+          <Qr value={verif.url} size={92} />
+          <div className="text-[11px] text-gray-500 leading-relaxed">
+            <p className="font-bold text-secondary text-[12px]">Documento verificable</p>
+            <p>Escanee el código con la cámara del celular para comprobar que este documento es auténtico y no ha sido modificado.</p>
+            <p>Código de seguridad: <b className="font-mono text-dark tracking-wider">{verif.codigo}</b></p>
+          </div>
+        </div>
+      )}
     </article>
   )
 }
@@ -349,7 +383,11 @@ function Hoja({ b, consecutivo, fecha: f, formato, atenuado }: { b: Borrador; co
 
 function Emitidos({ onNuevo }: { onNuevo: () => void }) {
   const { emitidos } = useDocumentos()
+  const registro = useRegistroDocs()
+  const toast = useToast()
   const [ver, setVer] = useState<Emitido | null>(null)
+  const [anulando, setAnulando] = useState<Emitido | null>(null)
+  const [motivo, setMotivo] = useState('')
   const [q, setQ] = useState('')
   const lista = emitidos.filter((d) => !q || `${d.consecutivo} ${d.nombre} ${d.dirigidoA} ${d.borrador.asunto}`.toLowerCase().includes(q.toLowerCase()))
 
@@ -371,7 +409,7 @@ function Emitidos({ onNuevo }: { onNuevo: () => void }) {
       <section className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-soft/60 border-b border-gray-100"><tr><th className="th">Consecutivo</th><th className="th">Documento</th><th className="th">Dirigido a</th><th className="th">Fecha</th><th className="th">Emitido por</th><th className="th" /></tr></thead>
+            <thead className="bg-gray-soft/60 border-b border-gray-100"><tr><th className="th">Consecutivo</th><th className="th">Documento</th><th className="th">Dirigido a</th><th className="th">Fecha</th><th className="th">Emitido por</th><th className="th">Estado</th><th className="th" /></tr></thead>
             <tbody className="divide-y divide-gray-100">
               {lista.map((d) => (
                 <tr key={d.consecutivo} className="hover:bg-gray-soft/50">
@@ -380,7 +418,11 @@ function Emitidos({ onNuevo }: { onNuevo: () => void }) {
                   <td className="td text-gray-600">{d.dirigidoA}</td>
                   <td className="td text-gray-600 whitespace-nowrap">{fecha(d.ts)}</td>
                   <td className="td text-gray-600">{d.usuario}</td>
-                  <td className="td text-right"><button onClick={() => setVer(d)} className="btn-sm">Ver</button></td>
+                  <td className="td">{registro[d.consecutivo]?.anulado ? <span className="badge-bad" title={registro[d.consecutivo]!.anulado!.motivo}>Anulado</span> : <span className="badge-ok">Vigente</span>}</td>
+                  <td className="td text-right whitespace-nowrap">
+                    {!registro[d.consecutivo]?.anulado && <button onClick={() => { setAnulando(d); setMotivo('') }} className="btn-sm mr-1.5 text-red-600">Anular</button>}
+                    <button onClick={() => setVer(d)} className="btn-sm">Ver</button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -395,12 +437,20 @@ function Emitidos({ onNuevo }: { onNuevo: () => void }) {
         subtitle={ver ? `${ver.nombre} · ${ver.dirigidoA}` : undefined}
         footer={ver && (
           <div className="flex justify-end gap-2">
-            <button onClick={() => descargarWord(`${ver.consecutivo} ${ver.nombre}`, ver.borrador, ver.consecutivo, new Date(ver.ts), ver.formato)} className="btn-secondary"><Ico d={D.word} /> Word</button>
+            <button onClick={() => descargarWord(`${ver.consecutivo} ${ver.nombre}`, ver.borrador, ver.consecutivo, new Date(ver.ts), ver.formato, verifDe(ver))} className="btn-secondary"><Ico d={D.word} /> Word</button>
             <button onClick={() => window.print()} className="btn bg-dark text-white hover:bg-black"><Ico d={D.print} /> Imprimir / PDF</button>
           </div>
         )}
       >
-        {ver && <div className="bg-gray-soft p-4"><Hoja b={ver.borrador} consecutivo={ver.consecutivo} fecha={new Date(ver.ts)} formato={ver.formato} /></div>}
+        {ver && <div className="bg-gray-soft p-4"><Hoja b={ver.borrador} consecutivo={ver.consecutivo} fecha={new Date(ver.ts)} formato={ver.formato} verif={verifDe(ver)} anulado={!!registro[ver.consecutivo]?.anulado} /></div>}
+      </Modal>
+      <Modal open={!!anulando} onClose={() => setAnulando(null)} size="sm" title={`Anular ${anulando?.consecutivo ?? ''}`} subtitle="Quien escanee su QR verá que ya no es válido."
+        footer={<div className="flex justify-end gap-2"><button onClick={() => setAnulando(null)} className="btn-secondary">Cancelar</button><button disabled={motivo.trim().length < 5} onClick={() => { anularDocumento(anulando!.consecutivo, getUsername(), motivo.trim()); toast('Documento anulado', anulando!.consecutivo); setAnulando(null) }} className="btn bg-red-600 text-white hover:bg-red-700">Anular documento</button></div>}>
+        <div className="p-6 space-y-2">
+          <label className="field-label">Motivo</label>
+          <input value={motivo} onChange={(x) => setMotivo(x.target.value)} placeholder="Ej: se expidió con un error en el nombre" className="field" autoFocus />
+          <p className="text-xs text-gray-500">El documento sigue en el historial, pero la verificación dirá «ANULADO» con la fecha y el motivo.</p>
+        </div>
       </Modal>
     </>
   )

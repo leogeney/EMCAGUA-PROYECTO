@@ -31,7 +31,25 @@ type Semilla = {
   cortado: boolean
   /** Pico de consumo en el último periodo (posible fuga) */
   pico?: number
+  /** Para propietarios con varios predios: misma cédula que su otro predio */
+  cedula?: string
+  direccion?: string
+  ocupante?: { nombre: string; telefono: string }
 }
+
+/** Cédula y dirección de demostración, fijas para cada ID (no gastan números aleatorios). */
+const h = (s: string) => { let x = 2166136261; for (const c of s) x = Math.imul(x ^ c.charCodeAt(0), 16777619) >>> 0; x ^= x >>> 13; return Math.imul(x, 2654435761) >>> 0 }
+const cedulaDemo = (id: string) => String(88_000_000 + (h(id) % 9_000_000))
+const CALLES: Record<string, string> = { Centro: 'Calle', Guamalito: 'Carrera', 'El Carmen': 'Calle', 'La Esperanza': 'Carrera' }
+const direccionDemo = (id: string, barrio: string) => { const x = h(id + barrio); return `${CALLES[barrio] ?? 'Calle'} ${2 + (x % 12)} # ${1 + ((x >>> 4) % 15)}-${10 + ((x >>> 8) % 80)}` }
+
+// Propietarios con más de un predio (casos de prueba)
+const CASAS_EXTRA: Semilla[] = [
+  { id: '10294', nombre: 'Juan Pérez', cedula: cedulaDemo('10234'), barrio: 'Guamalito', estrato: 1, telefono: '310 456 7890', base: 14, debeDesde: null, cortado: false, ocupante: { nombre: 'Rosa Bayona', telefono: '311 902 3344' } },
+  { id: '10295', nombre: 'Fernando Ortiz', cedula: cedulaDemo('10244'), barrio: 'Centro', estrato: 2, telefono: '314 333 4455', base: 24, debeDesde: 2, cortado: false, ocupante: { nombre: 'Camilo Durán', telefono: '320 455 1290' } },
+  { id: '10296', nombre: 'Diana Herrera', cedula: cedulaDemo('10243'), barrio: 'El Carmen', estrato: 3, telefono: '317 888 9900', base: 11, debeDesde: null, cortado: false },
+  { id: '10297', nombre: 'Diana Herrera', cedula: cedulaDemo('10243'), barrio: 'Centro', estrato: 3, telefono: '317 888 9900', base: 6, debeDesde: 1, cortado: false, ocupante: { nombre: 'Local comercial (bajos)', telefono: '317 888 9900' } },
+]
 
 // Usuarios originales del prototipo (se conservan los casos de prueba).
 const ORIGINALES: Semilla[] = [
@@ -93,7 +111,7 @@ function horaLaboral(rnd: () => number, dia: Date) {
 
 export function crearDatosDemo(hoy = new Date()): { usuarios: Usuario[]; pagos: Pago[] } {
   const rnd = mulberry32(20260930)
-  const semillas = [...ORIGINALES, ...generarSemillas(rnd, 44)]
+  const semillas = [...ORIGINALES, ...generarSemillas(rnd, 44), ...CASAS_EXTRA]
   const periodos = periodosRecientes(12, hoy)
   const ultimoIdx = periodos.length - 1
 
@@ -123,6 +141,9 @@ export function crearDatosDemo(hoy = new Date()): { usuarios: Usuario[]; pagos: 
     return {
       id: s.id,
       nombre: s.nombre,
+      cedula: s.cedula ?? cedulaDemo(s.id),
+      direccion: s.direccion ?? direccionDemo(s.id, s.barrio),
+      ...(s.ocupante ? { ocupante: s.ocupante } : {}),
       barrio: s.barrio,
       estrato: s.estrato,
       medidor: `MED-${s.id}`,

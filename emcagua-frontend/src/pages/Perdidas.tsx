@@ -61,9 +61,9 @@ export default function Perdidas() {
         <ChartCard
           title="Pérdida por sector"
           subtitle={`${ult.full} · agua de entrada de cada sector frente a lo facturado`}
-          table={{ columns: ['Sector', 'Producido', 'Facturado', 'Perdido', 'IANC'], rows: sectores.map((s) => [s.barrio, num(s.producido), num(s.facturado), num(s.perdido), pct(s.ianc, 1)]) }}
+          table={{ columns: ['Sector', 'Producido', 'Facturado', 'Perdido', 'IANC'], rows: sectores.map((s) => [s.sector, num(s.producido), num(s.facturado), num(s.perdido), pct(s.ianc, 1)]) }}
         >
-          <BarList data={sectores.map((s) => ({ label: s.barrio, value: s.ianc, hint: `${num(s.perdido)} m³ perdidos`, color: s.ianc > IANC_META ? CHART.serie2 : CHART.serie1 }))} format={(n) => pct(n, 1)} max={Math.max(0.6, sectores[0]?.ianc ?? 0)} />
+          <BarList data={sectores.map((s) => ({ label: s.sector, value: s.ianc, hint: `${num(s.perdido)} m³ perdidos`, color: s.ianc > IANC_META ? CHART.serie2 : CHART.serie1 }))} format={(n) => pct(n, 1)} max={Math.max(0.6, sectores[0]?.ianc ?? 0)} />
         </ChartCard>
       </div>
 
@@ -82,7 +82,7 @@ export default function Perdidas() {
             </li>
             <li className="flex gap-3">
               <span className="h-2.5 w-2.5 rounded-full mt-1.5 shrink-0" style={{ background: CHART.serie2 }} />
-              <div className="flex-1"><p className="font-semibold text-dark flex justify-between gap-2"><span>Pérdidas en la red y conexiones sin medir</span><span className="tabular-nums whitespace-nowrap">{num(red)} m³</span></p><p className="text-xs text-gray-500 mt-0.5">No se ven en los medidores de los usuarios. Hay que buscarlas en campo, empezando por {sectores[0]?.barrio}.</p></div>
+              <div className="flex-1"><p className="font-semibold text-dark flex justify-between gap-2"><span>Pérdidas en la red y conexiones sin medir</span><span className="tabular-nums whitespace-nowrap">{num(red)} m³</span></p><p className="text-xs text-gray-500 mt-0.5">No se ven en los medidores de los usuarios. Hay que buscarlas en campo, empezando por el sector {sectores[0]?.sector}.</p></div>
             </li>
           </ul>
           <div className="rounded-xl bg-gray-soft px-3.5 py-3 mt-5 text-xs text-gray-600">

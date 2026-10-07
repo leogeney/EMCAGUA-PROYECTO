@@ -1,0 +1,55 @@
+# Configuración de EMCAGUA APC. Los valores sensibles se pueden cambiar con variables de entorno
+# (por ejemplo EMCAGUA_DB_PASSWORD) sin tocar este archivo.
+server:
+  port: ${PORT:8080}
+
+spring:
+  application:
+    name: emcagua-backend
+  datasource:
+    url: ${EMCAGUA_DB_URL:jdbc:postgresql://localhost:5432/emcagua}
+    username: ${EMCAGUA_DB_USER:postgres}
+    password: ${EMCAGUA_DB_PASSWORD:postgres}
+  jpa:
+    # En desarrollo Hibernate crea y actualiza las tablas a partir de las entidades.
+    # En producción se cambia a "validate" y se usan migraciones.
+    hibernate:
+      ddl-auto: ${EMCAGUA_DDL:update}
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc.time_zone: America/Bogota
+        format_sql: true
+  data:
+    rest:
+      base-path: /api
+      default-page-size: 50
+      max-page-size: 500
+      return-body-on-create: true
+      return-body-on-update: true
+  jackson:
+    time-zone: America/Bogota
+    serialization:
+      write-dates-as-timestamps: false
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+
+emcagua:
+  # Clave para firmar las sesiones (JWT) y los códigos QR de verificación. CAMBIARLA en producción.
+  secreto: ${EMCAGUA_SECRETO:cambie-esta-clave-larga-de-desarrollo-emcagua-apc-2026}
+  sesion-horas: 10
+  # Dirección del frontend (React) que puede llamar a la API
+  frontend: ${EMCAGUA_FRONTEND:http://localhost:5173}
+  # Frontend ya compilado (npm run build) que se sirve en la misma dirección de la API
+  frontend-dist: ${EMCAGUA_FRONTEND_DIST:file:../emcagua-frontend/dist/}
+  # true = la primera vez carga datos de demostración (suscriptores, facturas, pagos, empleados...).
+  # false (por defecto) = empieza limpia, solo con la cuenta admin.
+  datos-demo: ${EMCAGUA_DEMO:false}
+  zona-horaria: America/Bogota
+
+logging:
+  level:
+    co.emcagua: INFO

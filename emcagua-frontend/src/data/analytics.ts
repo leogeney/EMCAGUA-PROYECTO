@@ -1,4 +1,5 @@
-import { BARRIOS, ESTRATOS, MESES_CORTOS, UMBRAL_ALTO } from './constants'
+import { ESTRATOS, MESES_CORTOS, UMBRAL_ALTO } from './constants'
+import { sectores } from './zonas'
 import { montoPeriodo, nombrePeriodo, periodosFacturados, resumenUsuario, vencimientoPeriodo } from './billing'
 import type { Usuario } from './types'
 
@@ -36,13 +37,14 @@ export function serieMensual(usuarios: Usuario[], n = 12): PuntoMensual[] {
   })
 }
 
-export function porBarrio(usuarios: Usuario[], hoy = new Date()) {
-  return BARRIOS.map((b) => {
-    const us = usuarios.filter((u) => u.barrio === b)
+/** Indicadores por sector de la red. */
+export function porSector(usuarios: Usuario[], hoy = new Date()) {
+  return sectores().map((b) => {
+    const us = usuarios.filter((u) => u.sector === b)
     const res = us.map((u) => resumenUsuario(u, hoy))
     const conConsumo = res.filter((r) => r.consumoActual > 0)
     return {
-      barrio: b,
+      sector: b,
       usuarios: us.length,
       consumoPromedio: conConsumo.length ? conConsumo.reduce((s, r) => s + r.consumoActual, 0) / conConsumo.length : 0,
       morosos: res.filter((r) => r.vencido).length,

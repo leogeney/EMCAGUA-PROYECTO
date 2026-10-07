@@ -11,7 +11,7 @@ import { useOperacion } from './OperacionContext'
 import { consumosAtipicos, serieMensual } from './analytics'
 import { balanceHidrico, IANC_META } from './perdidas'
 import { estadoStock } from './operacion'
-import { BARRIOS } from './constants'
+import { sectores, ubicacion } from './zonas'
 import { ALARMAS } from './telemetria'
 import { cop, num, pct } from '../utils/format'
 import { puede } from '../utils/session'
@@ -82,18 +82,18 @@ export function useRecomendaciones(): Recomendacion[] {
     if (manip.length) out.push({
       id: `manip-${manip.map((a) => a.usuario.id).join('.')}`, area: 'Medidores', prioridad: 1,
       titulo: `Programa visita técnica a ${manip.length} medidor(es) con posible manipulación`,
-      porque: `${manip.map((a) => `${a.usuario.nombre} (${a.usuario.barrio})`).join(', ')}. Deja constancia con un acta de visita: sirve si luego hay que cobrar o sancionar.`,
+      porque: `${manip.map((a) => `${a.usuario.nombre} (${ubicacion(a.usuario)})`).join(', ')}. Deja constancia con un acta de visita: sirve si luego hay que cobrar o sancionar.`,
       accion: { label: 'Hacer acta de visita', to: '/documentos?plantilla=acta-visita' }, rutas: ['/lecturas', '/mi-dia'],
     })
 
-    // 3. Varios medidores sin señal en el mismo barrio = problema de red/antena, no de cada medidor
+    // 3. Varios medidores sin señal en el mismo sector = problema de red/antena, no de cada medidor
     const sinSenal = alarmas.filter((a) => a.tipo === 'sin_comunicacion')
-    const porBarrio = BARRIOS.map((b) => ({ b, n: sinSenal.filter((a) => a.usuario.barrio === b).length })).sort((a, c) => c.n - a.n)[0]
+    const porBarrio = sectores().map((b) => ({ b, n: sinSenal.filter((a) => a.usuario.sector === b).length })).sort((a, c) => c.n - a.n)[0]
     const diasCierre = Math.ceil((cierrePeriodo.getTime() - hoy.getTime()) / 86_400_000)
     if (porBarrio && porBarrio.n >= 2) out.push({
       id: `senal-${porBarrio.b}-${porBarrio.n}`, area: 'Medidores', prioridad: diasCierre <= 7 ? 1 : 2,
       titulo: `Revisa la señal de los medidores en ${porBarrio.b}`,
-      porque: `${porBarrio.n} medidores de ese barrio dejaron de comunicar a la vez: puede ser la antena o el concentrador, no los medidores. Faltan ${Math.max(0, diasCierre)} día(s) para facturar; si no vuelven, se cobran por promedio.`,
+      porque: `${porBarrio.n} medidores de ese sector dejaron de comunicar a la vez: puede ser la antena o el concentrador, no los medidores. Faltan ${Math.max(0, diasCierre)} día(s) para facturar; si no vuelven, se cobran por promedio.`,
       accion: { label: 'Ver medidores sin señal', to: '/lecturas' }, rutas: ['/lecturas', '/mi-dia', '/facturacion'],
     })
 
@@ -167,8 +167,8 @@ export function useRecomendaciones(): Recomendacion[] {
     if (bal) {
       const peor = [...bal.sectores].sort((a, b) => b.ianc - a.ianc)[0]
       if (peor && peor.ianc > IANC_META) out.push({
-        id: `perdidas-${peor.barrio}-${bal.mes}-${bal.anio}`, area: 'Pérdidas', prioridad: peor.ianc > IANC_META + 0.1 ? 1 : 2,
-        titulo: `Busca fugas en la red de ${peor.barrio}`,
+        id: `perdidas-${peor.sector}-${bal.mes}-${bal.anio}`, area: 'Pérdidas', prioridad: peor.ianc > IANC_META + 0.1 ? 1 : 2,
+        titulo: `Busca fugas en la red del sector ${peor.sector}`,
         porque: `Ese sector perdió el ${pct(peor.ianc, 0)} del agua en ${bal.full.toLowerCase()} (${num(peor.perdido)} m³), la meta es ${pct(IANC_META, 0)}. Es donde una cuadrilla rinde más.`,
         accion: { label: 'Ver pérdidas', to: '/perdidas' }, rutas: ['/perdidas', '/dashboard', '/mi-dia', '/inventario'],
       })

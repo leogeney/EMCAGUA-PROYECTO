@@ -85,6 +85,7 @@ const CASOS: { tipo: TipoPqr; texto: string; diasAtras: number; estado: Pqr['est
 ]
 
 export function crearPqrDemo(usuarios: Usuario[], hoy = new Date()): Pqr[] {
+  if (!usuarios.length) return []
   return CASOS.map((c, i) => {
     const u = usuarios[(i * 7 + 3) % usuarios.length]
     const rad = new Date(hoy)
@@ -107,7 +108,7 @@ export function crearPqrDemo(usuarios: Usuario[], hoy = new Date()): Pqr[] {
       suscriptorId: u.id,
       nombre: u.nombre,
       telefono: u.telefono,
-      barrio: u.barrio,
+      barrio: u.sector,
       descripcion: c.texto,
       estado: c.estado,
       radicadaEn: rad.getTime(),

@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useData } from '../data/DataContext'
 import { usePqr } from '../data/PqrContext'
+import { mensajeError } from '../data/api'
 import { useNomina } from '../data/NominaContext'
-import { BARRIOS, CHART } from '../data/constants'
+import { CHART } from '../data/constants'
+import { sectores, useZonas } from '../data/zonas'
 import { PLANTILLAS, PLAZO_DIAS_HABILES, diasHabilesEntre, diasHabilesRestantes, sugerirCategoria, sumarDiasHabiles } from '../data/pqr'
 import type { CategoriaPqr, EstadoPqr, Pqr, TipoPqr } from '../data/types'
 import { BarList, ChartCard } from '../components/charts/charts'
@@ -68,8 +70,9 @@ export default function PqrPage() {
       .sort((a, b) => (abierta(a) && abierta(b) ? a.vence - b.vence : b.radicadaEn - a.radicadaEn))
   }, [pqrs, tab, q, cat])
 
+  const zonas = useZonas()
   const porCategoria = CATEGORIAS.map((c) => ({ label: c, value: pqrs.filter((p) => p.categoria === c).length })).filter((x) => x.value > 0).sort((a, b) => b.value - a.value)
-  const porBarrio = BARRIOS.map((b) => ({ label: b, value: pqrs.filter((p) => p.barrio === b).length })).sort((a, b) => b.value - a.value)
+  const porBarrio = zonas.map((z) => ({ label: z.nombre, value: pqrs.filter((p) => p.barrio === z.nombre).length })).sort((a, b) => b.value - a.value)
   const seleccionada = pqrs.find((p) => p.radicado === sel) ?? null
 
   return (
@@ -150,7 +153,7 @@ export default function PqrPage() {
           <ChartCard title="PQR por categoría" subtitle={`${pqrs.length} radicadas`} table={{ columns: ['Categoría', 'PQR'], rows: porCategoria.map((c) => [c.label, c.value]) }}>
             <BarList data={porCategoria} format={(n) => num(n)} />
           </ChartCard>
-          <ChartCard title="PQR por barrio" table={{ columns: ['Barrio', 'PQR'], rows: porBarrio.map((c) => [c.label, c.value]) }}>
+          <ChartCard title="PQR por sector" table={{ columns: ['Sector', 'PQR'], rows: porBarrio.map((c) => [c.label, c.value]) }}>
             <BarList data={porBarrio} format={(n) => num(n)} color={CHART.serie2} />
           </ChartCard>
         </div>
@@ -172,7 +175,7 @@ function NuevaPqrModal({ onClose, onCreada }: { onClose: () => void; onCreada: (
   const [suscriptorId, setSuscriptorId] = useState<string | undefined>()
   const [nombre, setNombre] = useState('')
   const [telefono, setTelefono] = useState('')
-  const [barrio, setBarrio] = useState<string>(BARRIOS[0])
+  const [barrio, setBarrio] = useState<string>(sectores()[0] ?? '')
   const [tipo, setTipo] = useState<TipoPqr>('Reclamo')
   const [canal, setCanal] = useState<Pqr['canal']>('Presencial')
   const [descripcion, setDescripcion] = useState('')
@@ -185,18 +188,26 @@ function NuevaPqrModal({ onClose, onCreada }: { onClose: () => void; onCreada: (
 
   const elegir = (id: string) => {
     const u = usuarios.find((x) => x.id === id)!
-    setSuscriptorId(u.id); setNombre(u.nombre); setTelefono(u.telefono); setBarrio(u.barrio); setBusca('')
+    setSuscriptorId(u.id); setNombre(u.nombre); setTelefono(u.telefono); setBarrio(u.sector); setBusca('')
   }
 
-  const guardar = () => {
-    const p = radicar({ tipo, categoria: catFinal, canal, suscriptorId, nombre, telefono, barrio, descripcion })
-    toast('PQR radicada', `${p.radicado} · vence ${fechaCorta(new Date(p.vence))}`)
-    onCreada(p.radicado)
+  const [enviando, setEnviando] = useState(false)
+  const guardar = async () => {
+    setEnviando(true)
+    try {
+      const p = await radicar({ tipo, categoria: catFinal, canal, suscriptorId, nombre, telefono, barrio, descripcion })
+      toast('PQR radicada', `${p.radicado} · vence ${fechaCorta(new Date(p.vence))}`)
+      onCreada(p.radicado)
+    } catch (e) {
+      toast('No se radicó la PQR', mensajeError(e), 'warning')
+    } finally {
+      setEnviando(false)
+    }
   }
 
   return (
     <Modal open onClose={onClose} size="lg" title="Radicar PQR" subtitle={`Fecha límite de respuesta: ${fecha(vence)} (${PLAZO_DIAS_HABILES} días hábiles)`}
-      footer={<><button onClick={onClose} className="btn-secondary flex-1">Cancelar</button><button disabled={!valido} onClick={guardar} className="btn-primary flex-1">Radicar</button></>}>
+      footer={<><button onClick={onClose} className="btn-secondary flex-1">Cancelar</button><button disabled={!valido || enviando} onClick={guardar} className="btn-primary flex-1">{enviando ? 'Radicando…' : 'Radicar'}</button></>}>
       <div className="px-6 py-5 space-y-4">
         <div>
           <label className="field-label">Suscriptor</label>
@@ -222,7 +233,7 @@ function NuevaPqrModal({ onClose, onCreada }: { onClose: () => void; onCreada: (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div><label className="field-label">Nombre</label><input value={nombre} onChange={(e) => setNombre(e.target.value)} className="field" /></div>
             <div><label className="field-label">Teléfono</label><input value={telefono} onChange={(e) => setTelefono(e.target.value)} className="field" /></div>
-            <div><label className="field-label">Barrio</label><select value={barrio} onChange={(e) => setBarrio(e.target.value)} className="field">{BARRIOS.map((b) => <option key={b}>{b}</option>)}</select></div>
+            <div><label className="field-label">Sector</label><select value={barrio} onChange={(e) => setBarrio(e.target.value)} className="field">{sectores().map((b) => <option key={b}>{b}</option>)}</select></div>
           </div>
         )}
         <div className="grid grid-cols-2 gap-3">
@@ -274,7 +285,7 @@ function DetallePqr({ p, onClose }: { p: Pqr; onClose: () => void }) {
       </div>
       <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
         <div className="grid grid-cols-2 gap-3 text-sm">
-          {[['Usuario', p.nombre], ['Barrio', p.barrio], ['Teléfono', p.telefono || '—'], ['Canal', p.canal], ['Radicada', `${fecha(p.radicadaEn)} ${hora(p.radicadaEn)}`], ['Fecha límite', fecha(p.vence)]].map(([k, v]) => (
+          {[['Usuario', p.nombre], ['Sector', p.barrio], ['Teléfono', p.telefono || '—'], ['Canal', p.canal], ['Radicada', `${fecha(p.radicadaEn)} ${hora(p.radicadaEn)}`], ['Fecha límite', fecha(p.vence)]].map(([k, v]) => (
             <div key={k} className="rounded-xl bg-gray-soft px-3 py-2"><p className="text-[11px] text-gray-400">{k}</p><p className="font-semibold text-dark">{v}</p></div>
           ))}
         </div>

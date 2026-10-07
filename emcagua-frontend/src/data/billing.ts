@@ -1,5 +1,5 @@
 import { getFirstFriday } from '../utils/cutoff'
-import { MESES } from './constants'
+import { cobroFijo, MESES } from './constants'
 import { valorPeriodo } from './tarifa'
 import type { Factura, Periodo, Usuario } from './types'
 
@@ -34,7 +34,9 @@ export function leerPeriodo(valor: string) {
 export function periodosFacturados(usuarios: Usuario[], n = 12) {
   const set = new Map<number, { mes: number; anio: number }>()
   for (const u of usuarios) for (const p of u.historial) set.set(clavePeriodo(p.mes, p.anio), { mes: p.mes, anio: p.anio })
-  return [...set.entries()].sort((a, b) => a[0] - b[0]).slice(-n).map(([, v]) => v)
+  const lista = [...set.entries()].sort((a, b) => a[0] - b[0]).slice(-n).map(([, v]) => v)
+  // Sistema recién empezado (sin facturas todavía): se muestra el periodo que corresponde por fecha
+  return lista.length ? lista : [ultimoPeriodo()]
 }
 
 /** Periodo siguiente al último facturado: el que está en toma de lecturas. */
@@ -46,6 +48,7 @@ export function periodoEnLectura(usuarios: Usuario[]) {
 
 /** Lectura acumulada del medidor (m³) al cierre del último periodo. */
 export function lecturaMedidor(u: Usuario) {
+  if (u.lecturaBase !== undefined) return u.lecturaBase
   let h = 0
   for (const ch of u.id) h = (h * 31 + ch.charCodeAt(0)) % 9973
   return 1200 + (h % 3800) + u.historial.reduce((s, p) => s + p.consumo, 0)
@@ -76,17 +79,20 @@ export function periodoAFactura(u: Usuario, p: Periodo, hoy = new Date()): Factu
     id: facturaId(u.id, p.mes, p.anio),
     clienteId: u.id,
     cliente: u.nombre,
-    barrio: u.barrio,
+    sector: u.sector,
+    barrio: u.barrio ? `${u.barrio}, ${u.sector}` : u.sector,
     estrato: u.estrato,
     mes: p.mes,
     anio: p.anio,
     periodo: nombrePeriodo(p.mes, p.anio),
     consumo: p.consumo,
-    monto: montoPeriodo(p.consumo, u.estrato, p.mes, p.anio),
+    monto: p.monto ?? (p.fija ? cobroFijo(u.estrato) : montoPeriodo(p.consumo, u.estrato, p.mes, p.anio)),
     vencimiento: venc,
     estado,
     vencida: estado === 'Pendiente' && hoy > venc,
     fechaPago: p.fechaPago,
+    codigo: p.codigo,
+    fija: p.fija,
   }
 }
 

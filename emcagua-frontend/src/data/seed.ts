@@ -2,7 +2,9 @@
  * Datos de demostración DETERMINISTAS (misma semilla => mismos datos en cada recarga).
  * Se reemplazará por la API de Django cuando exista el backend.
  */
-import { BARRIOS } from './constants'
+import { SECTORES_INICIALES } from './zonas'
+/** Los datos de ejemplo usaban otros nombres de zona: se pasan a los 5 sectores reales. */
+const SECTOR_DEMO: Record<string, string> = { Centro: 'Centro', Guamalito: 'Líbano', 'El Carmen': 'Pique Tierra', 'La Esperanza': 'Calle Nueva' }
 import { generacionPeriodo, periodosRecientes, vencimientoPeriodo, facturaId, montoPeriodo, nombrePeriodo } from './billing'
 import type { Pago, Periodo, Usuario } from './types'
 
@@ -91,7 +93,7 @@ function generarSemillas(rnd: () => number, n: number): Semilla[] {
     out.push({
       id: String(10250 + i),
       nombre: `${pick(NOMBRES)} ${pick(APELLIDOS)}`,
-      barrio: pick(BARRIOS),
+      barrio: pick(SECTORES_INICIALES),
       estrato,
       telefono: `3${Math.floor(rnd() * 3 + 1)}${Math.floor(rnd() * 10)} ${String(Math.floor(rnd() * 900 + 100))} ${String(Math.floor(rnd() * 9000 + 1000))}`,
       base,
@@ -144,7 +146,9 @@ export function crearDatosDemo(hoy = new Date()): { usuarios: Usuario[]; pagos: 
       cedula: s.cedula ?? cedulaDemo(s.id),
       direccion: s.direccion ?? direccionDemo(s.id, s.barrio),
       ...(s.ocupante ? { ocupante: s.ocupante } : {}),
-      barrio: s.barrio,
+      sector: SECTOR_DEMO[s.barrio] ?? s.barrio,
+      barrio: '',
+      conMedidor: true, // la demostración simula medidores inteligentes
       estrato: s.estrato,
       medidor: `MED-${s.id}`,
       telefono: s.telefono,

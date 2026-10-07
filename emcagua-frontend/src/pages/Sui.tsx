@@ -1,4 +1,5 @@
 import { balanceHidrico } from '../data/perdidas'
+import { ubicacion } from '../data/zonas'
 import { useMemo, useState } from 'react'
 import { useData } from '../data/DataContext'
 import { usePqr } from '../data/PqrContext'
@@ -38,11 +39,11 @@ export default function Sui() {
       if (!h) return []
       const det = valorPeriodo(h.consumo, u.estrato, p.mes, p.anio)
       const v = (txt: string) => det.lineas.filter((l) => l.concepto.includes(txt)).reduce((s, l) => s + l.valor, 0)
-      return [[u.id, facturaId(u.id, p.mes, p.anio), u.barrio, u.estrato, 'Residencial', h.estado === 'Suspendido' ? 'Suspendido' : 'Activo', h.consumo, h.estimado ? 'Promedio' : 'Real',
+      return [[u.id, facturaId(u.id, p.mes, p.anio), ubicacion(u), u.estrato, 'Residencial', h.estado === 'Suspendido' ? 'Suspendido' : 'Activo', h.consumo, h.estimado ? 'Promedio' : 'Real',
         det.cra ? v('Acueducto · cargo fijo') : 0, det.cra ? v('Acueducto · consumo') : det.subtotal, det.cra ? v('Alcantarillado · cargo fijo') : 0, det.cra ? v('Alcantarillado · consumo') : 0, -det.subsidio, h.estado === 'Suspendido' ? 0 : det.total, h.estado, h.fechaPago ? iso(new Date(h.fechaPago)) : '']]
     })
     const pq = pqrs.filter((x) => enPeriodo(x.radicadaEn)).map((x) => [x.radicado, iso(new Date(x.radicadaEn)), x.tipo, x.categoria, x.canal, x.suscriptorId ?? '', x.estado, x.respondidaEn ? iso(new Date(x.respondidaEn)) : '', x.respondidaEn ? diasHabilesEntre(x.radicadaEn, x.respondidaEn) : '', x.respondidaEn ? (diasHabilesEntre(x.radicadaEn, x.respondidaEn) <= 15 ? 'Sí' : 'No') : ''])
-    const susp = usuarios.filter((u) => u.historial.some((x) => x.mes === p.mes && x.anio === p.anio && x.estado === 'Suspendido') || u.estado === 'Cortado').map((u) => { const r = resumen(u); return [u.id, u.barrio, u.estrato, u.medidor, u.estado === 'Cortado' ? 'Suspendido' : 'Reconectado', r.pagosDebe, Math.round(r.deuda)] })
+    const susp = usuarios.filter((u) => u.historial.some((x) => x.mes === p.mes && x.anio === p.anio && x.estado === 'Suspendido') || u.estado === 'Cortado').map((u) => { const r = resumen(u); return [u.id, ubicacion(u), u.estrato, u.medidor, u.estado === 'Cortado' ? 'Suspendido' : 'Reconectado', r.pagosDebe, Math.round(r.deuda)] })
     const b = balanceHidrico(usuarios, 12).find((x) => x.mes === p.mes && x.anio === p.anio)
     const s = serieMensual(usuarios, 12).find((x) => x.mes === p.mes && x.anio === p.anio)
     const pqP = pqrs.filter((x) => enPeriodo(x.radicadaEn))
@@ -61,7 +62,7 @@ export default function Sui() {
       ['PQR respondidas en término (≤15 días hábiles)', pqP.filter((x) => x.respondidaEn && diasHabilesEntre(x.radicadaEn, x.respondidaEn) <= 15).length, 'und'],
       ['Pagos registrados', pagos.filter((x) => enPeriodo(x.timestamp)).length, 'und'],
     ]
-    const cat = usuarios.map((u) => [u.id, u.barrio, u.estrato, 'Residencial', u.medidor, u.estado, u.historial[0] ? nombrePeriodo(u.historial[0].mes, u.historial[0].anio) : ''])
+    const cat = usuarios.map((u) => [u.id, ubicacion(u), u.estrato, 'Residencial', u.medidor, u.estado, u.historial[0] ? nombrePeriodo(u.historial[0].mes, u.historial[0].anio) : ''])
     return [
       { id: 'facturacion', nombre: 'Facturación por suscriptor', descripcion: 'Una fila por suscriptor: consumo, cargos, subsidio y estado de pago del periodo.', columnas: ['Código suscriptor', 'Factura', 'Sector', 'Estrato', 'Uso', 'Estado servicio', 'Consumo m³', 'Tipo lectura', 'CF acueducto', 'Consumo acueducto', 'CF alcantarillado', 'Vertimiento', 'Subsidio', 'Total facturado', 'Estado pago', 'Fecha pago'], filas: fact },
       { id: 'pqr', nombre: 'Peticiones, quejas y reclamos', descripcion: 'PQR radicadas en el periodo con tiempos de respuesta en días hábiles.', columnas: ['Radicado', 'Fecha radicación', 'Tipo', 'Causal', 'Canal', 'Código suscriptor', 'Estado', 'Fecha respuesta', 'Días hábiles', 'En término'], filas: pq },

@@ -3,6 +3,8 @@ import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Campana from './Campana'
 import AsistenteFlotante from '../asistente/AsistenteFlotante'
+import { tokenApi } from '../../utils/session'
+import { BotonSinMedidores } from '../ModoSinMedidores'
 
 export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -25,9 +27,10 @@ export default function AppLayout() {
           </div>
           <div className="flex items-center gap-2">
             <div className="hidden sm:flex items-center gap-2 h-9 px-3 rounded-xl bg-gray-50 border border-gray-100 text-gray-500 text-xs">
-              <span className="w-2 h-2 bg-amber-400 rounded-full" />
-              Modo demostración
+              <span className={`w-2 h-2 rounded-full ${tokenApi() ? 'bg-green-500' : 'bg-amber-400'}`} />
+              {tokenApi() ? 'Base de datos' : 'Modo demostración'}
             </div>
+            <BotonSinMedidores />
             <Campana />
           </div>
         </header>

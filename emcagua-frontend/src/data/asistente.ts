@@ -3,8 +3,9 @@
  * Si Ollama no está disponible, responde con reglas sencillas sobre los mismos datos.
  * Los datos NO salen del equipo: Ollama corre en el computador de la empresa.
  */
-import { BARRIOS, MESES, UMBRAL_ALTO } from './constants'
-import { consumosAtipicos, edadCartera, porBarrio, serieMensual } from './analytics'
+import { MESES, UMBRAL_ALTO } from './constants'
+import { leerZonas, sectores, ubicacion } from './zonas'
+import { consumosAtipicos, edadCartera, porSector, serieMensual } from './analytics'
 import { resumenUsuario } from './billing'
 import { diasHabilesRestantes } from './pqr'
 import type { Lectura, Pago, Pqr, Usuario } from './types'
@@ -35,16 +36,16 @@ export function resumenParaModelo({ usuarios, pagos, pqrs, lecturas, alarmas }: 
   const hoy = new Date()
   const secciones: (string | false)[] = [
     `FECHA: ${hoy.toLocaleDateString('es-CO')}. EMPRESA: EMCAGUA APC, acueducto y alcantarillado de El Carmen y Guamalito (Norte de Santander).`,
-    `SUSCRIPTORES: ${usuarios.length} (${usuarios.filter((u) => u.estado === 'Activo').length} activos, ${usuarios.filter((u) => u.estado === 'Cortado').length} cortados). Barrios: ${BARRIOS.join(', ')}.`,
+    `SUSCRIPTORES: ${usuarios.length} (${usuarios.filter((u) => u.estado === 'Activo').length} activos, ${usuarios.filter((u) => u.estado === 'Cortado').length} cortados). Sectores: ${sectores().join(', ')}.`,
     quiere(/factur|recaud|cobr|pag|mes|consum|ingres|plata|dinero/) && [`SERIE MENSUAL (periodo: consumo m³ | facturado | recaudado | pendiente):`, ...serie.map((p) => `- ${p.full}: ${num(p.consumo)} m³ | ${cop(p.facturado)} | ${cop(p.recaudado)} | ${cop(p.pendiente)}`)].join('\n'),
-    quiere(/barrio|sector|consum|mora|cartera|centro|guamalito|carmen|esperanza/) && [`POR BARRIO (consumo promedio último periodo, usuarios, en mora, cartera):`, ...porBarrio(usuarios).map((b) => `- ${b.barrio}: ${num(b.consumoPromedio, 1)} m³, ${b.usuarios} usuarios, ${b.morosos} en mora, ${cop(b.cartera)}`)].join('\n'),
+    quiere(/barrio|sector|consum|mora|cartera|centro|libano|pique|calle nueva|san luis/) && [`POR SECTOR (consumo promedio último periodo, usuarios, en mora, cartera):`, ...porSector(usuarios).map((b) => `- ${b.sector}: ${num(b.consumoPromedio, 1)} m³, ${b.usuarios} usuarios, ${b.morosos} en mora, ${cop(b.cartera)}`)].join('\n'),
     quiere(/cartera|mora|deb|deud|vencid|cort/) && `CARTERA POR EDAD: ${cartera.map((t) => `${t.label} ${cop(t.monto)} (${t.facturas} fact.)`).join('; ')}.`,
-    quiere(/mora|deb|deud|cort|quien|usuario/) && `USUARIOS EN MORA (top 10): ${morosos.slice(0, 10).map((x) => `${x.u.nombre} [${x.u.id}, ${x.u.barrio}, ${x.u.estado}] debe ${cop(x.r.deuda)}`).join('; ') || 'ninguno'}.`,
+    quiere(/mora|deb|deud|cort|quien|usuario/) && `USUARIOS EN MORA (top 10): ${morosos.slice(0, 10).map((x) => `${x.u.nombre} [${x.u.id}, ${ubicacion(x.u)}, ${x.u.estado}] debe ${cop(x.r.deuda)}`).join('; ') || 'ninguno'}.`,
     quiere(/fuga|atipic|consum|alto|perd/) && `CONSUMOS ATÍPICOS (posibles fugas): ${atipicos.slice(0, 8).map((a) => `${a.usuario.nombre} ${a.actual} m³ vs prom ${num(a.promedio, 1)}`).join('; ') || 'ninguno'}. Umbral de consumo alto: ${UMBRAL_ALTO} m³.`,
     quiere(/pag|recaud|hoy|semana|caja/) && `PAGOS: ${pagos.length} registrados; últimos 7 días ${cop(pagos.filter((p) => hoy.getTime() - p.timestamp < 7 * 864e5).reduce((s, p) => s + p.monto, 0))}.`,
     quiere(/pqr|queja|reclam|petici|usuario|atencion/) && `PQR: ${pqrs.length} en total, ${abiertas.length} abiertas, ${abiertas.filter((p) => diasHabilesRestantes(p.vence) < 0).length} vencidas. Por categoría: ${Object.entries(pqrs.reduce<Record<string, number>>((a, p) => ((a[p.categoria] = (a[p.categoria] ?? 0) + 1), a), {})).map(([k, v]) => `${k} ${v}`).join(', ')}.`,
     quiere(/medidor|lectur|alarma|fuga|telemetr/) && `MEDIDORES INTELIGENTES: ${Object.keys(lecturas).length} lecturas recibidas de ${usuarios.filter((u) => u.estado === 'Activo').length} medidores activos.`,
-    quiere(/medidor|alarma|fuga|manipul|comunica/) && `ALARMAS DE MEDIDORES: ${alarmas.map((a) => `${ALARMAS[a.tipo].label} - ${a.usuario.nombre} (${a.usuario.barrio}): ${a.detalle}`).join('; ') || 'ninguna'}.`,
+    quiere(/medidor|alarma|fuga|manipul|comunica/) && `ALARMAS DE MEDIDORES: ${alarmas.map((a) => `${ALARMAS[a.tipo].label} - ${a.usuario.nombre} (${ubicacion(a.usuario)}): ${a.detalle}`).join('; ') || 'ninguna'}.`,
   ]
   const lineas = secciones.filter(Boolean) as string[]
   // Pregunta abierta sin tema claro: un resumen corto de todo en vez del detalle completo
@@ -70,8 +71,42 @@ export async function estadoOllama(url: string): Promise<{ ok: boolean; modelos:
   }
 }
 
-/** Opciones para responder rápido en un PC sin tarjeta gráfica: contexto corto y respuestas acotadas. */
-const OPCIONES = { temperature: 0.2, num_ctx: 4096, num_predict: 450 }
+/**
+ * Opciones para responder rápido en un PC sin tarjeta gráfica: contexto corto y respuestas acotadas.
+ * num_ctx es el MISMO en todas las llamadas (chat, documentos, redes): si cambia, Ollama vuelve a cargar el modelo (≈20 s).
+ */
+export const NUM_CTX = 4096
+const OPCIONES = { temperature: 0.2, num_ctx: NUM_CTX, num_predict: 400 }
+
+/** Modelos pequeños que responden bien en español, del más recomendado al menos. */
+export const MODELOS_RAPIDOS = ['qwen2.5:3b', 'llama3.2:3b', 'qwen2.5:1.5b', 'gemma2:2b', 'llama3.2:1b']
+export const MODELO_RAPIDO = MODELOS_RAPIDOS[0]
+export const esRapido = (m: string) => MODELOS_RAPIDOS.some((r) => m === r || m.startsWith(`${r}-`))
+
+/** Elige el modelo más rápido instalado (si no hay ninguno pequeño, el primero que haya). */
+export const modeloPreferido = (modelos: string[]) => MODELOS_RAPIDOS.find((r) => modelos.includes(r)) ?? modelos.find(esRapido) ?? modelos[0] ?? ''
+
+/** Descarga un modelo en Ollama mostrando el avance (0 a 1). */
+export async function descargarModelo(url: string, modelo: string, alAvanzar: (fraccion: number, estado: string) => void, signal?: AbortSignal) {
+  const r = await fetch(`${url.replace(/\/$/, '')}/api/pull`, { method: 'POST', signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: modelo, stream: true }) })
+  if (!r.ok || !r.body) throw new Error(`Ollama respondió ${r.status}`)
+  const lector = r.body.getReader()
+  const dec = new TextDecoder()
+  let resto = ''
+  for (;;) {
+    const { done, value } = await lector.read()
+    if (done) break
+    resto += dec.decode(value, { stream: true })
+    const lineas = resto.split('\n')
+    resto = lineas.pop() ?? ''
+    for (const l of lineas) {
+      if (!l.trim()) continue
+      const j = JSON.parse(l) as { status?: string; total?: number; completed?: number; error?: string }
+      if (j.error) throw new Error(j.error)
+      alAvanzar(j.total ? (j.completed ?? 0) / j.total : 0, j.status ?? '')
+    }
+  }
+}
 
 /** Carga el modelo en memoria para que la primera pregunta no espere. Lo mantiene cargado 30 minutos. */
 export async function calentarOllama(url: string, modelo: string) {
@@ -91,7 +126,7 @@ export async function preguntarOllamaStream(url: string, modelo: string, histori
       options: OPCIONES,
       messages: [
         { role: 'system', content: `${INSTRUCCIONES}\n\nCONTEXTO DE DATOS:\n${contexto}` },
-        ...historial.slice(-6).map((m) => ({ role: m.rol === 'usuario' ? 'user' : 'assistant', content: m.texto })),
+        ...historial.slice(-4).map((m) => ({ role: m.rol === 'usuario' ? 'user' : 'assistant', content: m.texto })),
       ],
     }),
   })
@@ -125,7 +160,7 @@ export async function preguntarOllama(url: string, modelo: string, historial: Me
       options: OPCIONES,
       messages: [
         { role: 'system', content: `${INSTRUCCIONES}\n\nCONTEXTO DE DATOS:\n${contexto}` },
-        ...historial.slice(-6).map((m) => ({ role: m.rol === 'usuario' ? 'user' : 'assistant', content: m.texto })),
+        ...historial.slice(-4).map((m) => ({ role: m.rol === 'usuario' ? 'user' : 'assistant', content: m.texto })),
       ],
     }),
   })
@@ -145,7 +180,10 @@ export function respuestaRapida(pregunta: string, { usuarios, pagos, pqrs, lectu
   const serie = serieMensual(usuarios, 12)
   const ult = serie[serie.length - 1]
   const mesPedido = MESES.findIndex((m) => q.includes(norm(m)))
-  const barrioPedido = BARRIOS.find((b) => q.includes(norm(b)))
+  // Zona pedida: un sector o un barrio nombrado en la pregunta
+  const zonas = [...sectores(), ...leerZonas().flatMap((z) => z.barrios.map((b) => b.nombre))]
+  const barrioPedido = zonas.find((b) => q.includes(norm(b)))
+  const enZona = (u: { sector: string; barrio: string }) => !barrioPedido || u.sector === barrioPedido || u.barrio === barrioPedido
 
   if (/urgent|pendiente|hoy que|que hago|prioridad|que hay para hoy|atender/.test(q)) {
     const ab = pqrs.filter((p) => p.estado === 'Radicada' || p.estado === 'En trámite')
@@ -168,7 +206,7 @@ export function respuestaRapida(pregunta: string, { usuarios, pagos, pqrs, lectu
     const u0 = b[b.length - 1]
     if (!u0) return 'Aún no hay datos de agua producida.'
     const peor = [...u0.sectores].sort((a, c) => c.ianc - a.ianc)
-    return `En **${u0.full}** se perdió el **${pct(u0.ianc, 1)}** del agua producida (${num(u0.perdido)} m³)${u0.ianc > IANC_META ? `, por encima de la meta de ${pct(IANC_META)}` : ''}.\n${peor.map((x) => `- ${x.barrio}: ${pct(x.ianc, 1)} (${num(x.perdido)} m³)`).join('\n')}\nRecomendación: buscar fugas primero en ${peor[0].barrio}.`
+    return `En **${u0.full}** se perdió el **${pct(u0.ianc, 1)}** del agua producida (${num(u0.perdido)} m³)${u0.ianc > IANC_META ? `, por encima de la meta de ${pct(IANC_META)}` : ''}.\n${peor.map((x) => `- ${x.sector}: ${pct(x.ianc, 1)} (${num(x.perdido)} m³)`).join('\n')}\nRecomendación: buscar fugas primero en el sector ${peor[0].sector}.`
   }
 
   if (/comprar|material|inventario|bodega|stock|agot/.test(q) && materiales) {
@@ -181,13 +219,13 @@ export function respuestaRapida(pregunta: string, { usuarios, pagos, pqrs, lectu
   const u = usuarios.find((x) => q.includes(x.id) || (qd.length >= 6 && x.cedula.replace(/\D/g, '') === qd) || (x.nombre.length > 5 && q.includes(norm(x.nombre))))
   if (u) {
     const casas = usuarios.filter((x) => x.cedula && x.cedula === u.cedula)
-    const linea = (x: typeof u) => { const r = resumenUsuario(x); return `- **${x.direccion || x.id}** (código ${x.id}, ${x.barrio}, estrato ${x.estrato}) · ${x.estado.toLowerCase()} · último consumo ${r.consumoActual} m³ · ${r.deuda ? `debe ${cop(r.deuda)}${r.vencido ? ' (**vencida**)' : ''}` : 'al día'}` }
+    const linea = (x: typeof u) => { const r = resumenUsuario(x); return `- **${x.direccion || x.id}** (código ${x.id}, ${ubicacion(x)}, estrato ${x.estrato}) · ${x.estado.toLowerCase()} · último consumo ${r.consumoActual} m³ · ${r.deuda ? `debe ${cop(r.deuda)}${r.vencido ? ' (**vencida**)' : ''}` : 'al día'}` }
     if (casas.length > 1 && !q.includes(u.id)) {
       const total = casas.reduce((s, x) => s + resumenUsuario(x).deuda, 0)
       return `**${u.nombre}** (C.C. ${u.cedula}) tiene **${casas.length} predios**:\n${casas.map(linea).join('\n')}\n\n${total ? `Debe en total **${cop(total)}**. En Pagos y caja se puede cobrar todo en un solo recibo.` : 'Está al día en todos.'}`
     }
     const r = resumenUsuario(u)
-    return `**${u.nombre}** (código ${u.id}, ${u.direccion}, ${u.barrio}, estrato ${u.estrato}) · servicio **${u.estado}**.\n- Último consumo: ${r.consumoActual} m³ (promedio ${num(r.consumoPromedio, 1)} m³).\n- Saldo: ${r.deuda ? `${cop(r.deuda)} en ${r.pagosDebe} factura(s)${r.vencido ? ', **vencida**' : ''}` : 'al día'}.${casas.length > 1 ? `\n- Es propietario de ${casas.length} predios: ${casas.filter((x) => x.id !== u.id).map((x) => `${x.direccion || x.id} (${x.id})`).join(', ')}.` : ''}`
+    return `**${u.nombre}** (código ${u.id}, ${u.direccion}, ${ubicacion(u)}, estrato ${u.estrato}) · servicio **${u.estado}**.\n- Último consumo: ${r.consumoActual} m³ (promedio ${num(r.consumoPromedio, 1)} m³).\n- Saldo: ${r.deuda ? `${cop(r.deuda)} en ${r.pagosDebe} factura(s)${r.vencido ? ', **vencida**' : ''}` : 'al día'}.${casas.length > 1 ? `\n- Es propietario de ${casas.length} predios: ${casas.filter((x) => x.id !== u.id).map((x) => `${x.direccion || x.id} (${x.id})`).join(', ')}.` : ''}`
   }
 
   if (/recaud|cobr|pagar|pagos|ingres/.test(q)) {
@@ -198,24 +236,24 @@ export function respuestaRapida(pregunta: string, { usuarios, pagos, pqrs, lectu
   }
 
   if (/mora|deb|deud|cartera|vencid|cortar|corte/.test(q) && !/pqr/.test(q)) {
-    const lista = usuarios.map((x) => ({ x, r: resumenUsuario(x) })).filter((y) => y.r.vencido && (!barrioPedido || y.x.barrio === barrioPedido)).sort((a, b) => b.r.deuda - a.r.deuda)
+    const lista = usuarios.map((x) => ({ x, r: resumenUsuario(x) })).filter((y) => y.r.vencido && enZona(y.x)).sort((a, b) => b.r.deuda - a.r.deuda)
     const total = lista.reduce((s, y) => s + y.r.deuda, 0)
     const paraCorte = lista.filter((y) => y.x.estado === 'Activo')
     return `Hay **${lista.length} usuarios en mora**${barrioPedido ? ` en ${barrioPedido}` : ''} por **${cop(total)}**. ${paraCorte.length === 1 ? '1 sigue activo y está' : `${paraCorte.length} siguen activos y están`} para corte.\n${lista.slice(0, 5).map((y) => `- ${y.x.nombre} (${y.x.barrio}): ${cop(y.r.deuda)}${y.x.estado === 'Activo' ? ' · para corte' : ''}`).join('\n')}`
   }
 
   if (/fuga|atipic|raro|anomal|disparo|alto consumo|consumo alto/.test(q)) {
-    const a = consumosAtipicos(usuarios).filter((y) => !barrioPedido || y.usuario.barrio === barrioPedido)
-    const fugas = alarmas.filter((x) => x.tipo === 'fuga' && (!barrioPedido || x.usuario.barrio === barrioPedido))
-    const txtFugas = fugas.length ? `Los medidores reportan **${fugas.length} fuga(s) continua(s)** ahora mismo (nunca marcan cero en la madrugada):\n${fugas.map((x) => `- ${x.usuario.nombre} (${x.usuario.barrio}): ${x.detalle}`).join('\n')}\n\n` : ''
+    const a = consumosAtipicos(usuarios).filter((y) => enZona(y.usuario))
+    const fugas = alarmas.filter((x) => x.tipo === 'fuga' && enZona(x.usuario))
+    const txtFugas = fugas.length ? `Los medidores reportan **${fugas.length} fuga(s) continua(s)** ahora mismo (nunca marcan cero en la madrugada):\n${fugas.map((x) => `- ${x.usuario.nombre} (${ubicacion(x.usuario)}): ${x.detalle}`).join('\n')}\n\n` : ''
     if (!a.length) return txtFugas || 'No veo fugas ni consumos atípicos.'
-    return `${txtFugas}En el último periodo facturado encontré **${a.length} consumo(s) atípico(s)** (posibles fugas o errores de lectura):\n${a.slice(0, 6).map((y) => `- ${y.usuario.nombre} (${y.usuario.barrio}): ${y.actual} m³ vs promedio ${num(y.promedio, 1)} m³ (+${pct(y.variacion)})`).join('\n')}\nRecomendación: programar una visita técnica a los primeros de la lista.`
+    return `${txtFugas}En el último periodo facturado encontré **${a.length} consumo(s) atípico(s)** (posibles fugas o errores de lectura):\n${a.slice(0, 6).map((y) => `- ${y.usuario.nombre} (${ubicacion(y.usuario)}): ${y.actual} m³ vs promedio ${num(y.promedio, 1)} m³ (+${pct(y.variacion)})`).join('\n')}\nRecomendación: programar una visita técnica a los primeros de la lista.`
   }
 
   if (/consumo|agua|m3|metros/.test(q)) {
     if (barrioPedido) {
-      const b = porBarrio(usuarios).find((x) => x.barrio === barrioPedido)!
-      return `En **${b.barrio}** el consumo promedio del último periodo es **${num(b.consumoPromedio, 1)} m³** por usuario (${b.usuarios} usuarios).`
+      const us = usuarios.filter(enZona).map((x) => resumenUsuario(x).consumoActual).filter((c) => c > 0)
+      return `En **${barrioPedido}** el consumo promedio del último periodo es **${num(us.length ? us.reduce((a, c) => a + c, 0) / us.length : 0, 1)} m³** por usuario (${us.length} usuarios con consumo).`
     }
     const p = mesPedido >= 0 ? serie.find((s) => s.mes === mesPedido + 1) : ult
     return p ? `En **${p.full}** el consumo total fue **${num(p.consumo)} m³**, unos ${num(p.consumo / Math.max(1, p.usuariosConsumo), 1)} m³ por usuario.` : 'No tengo ese periodo.'
@@ -237,8 +275,8 @@ export function respuestaRapida(pregunta: string, { usuarios, pagos, pqrs, lectu
     const morosos = usuarios.filter((x) => resumenUsuario(x).vencido)
     const ab = pqrs.filter((p) => p.estado === 'Radicada' || p.estado === 'En trámite')
     const at = consumosAtipicos(usuarios)
-    const top = porBarrio(usuarios).sort((a, b) => b.consumoPromedio - a.consumoPromedio)[0]
-    return `**Resumen ${ult?.full ?? ''}**\n- Facturado ${cop(ult?.facturado ?? 0)}, recaudado ${cop(ult?.recaudado ?? 0)} (${pct(ult?.facturado ? ult.recaudado / ult.facturado : 0, 1)}).\n- ${morosos.length} usuarios en mora por ${cop(morosos.reduce((s, x) => s + resumenUsuario(x).deuda, 0))}.\n- Consumo total ${num(ult?.consumo ?? 0)} m³; el barrio con mayor promedio es ${top.barrio} (${num(top.consumoPromedio, 1)} m³).\n- ${at.length} posible(s) fuga(s) por revisar.\n- ${ab.length} PQR abiertas, ${ab.filter((p) => diasHabilesRestantes(p.vence) < 0).length} vencidas.`
+    const top = porSector(usuarios).sort((a, b) => b.consumoPromedio - a.consumoPromedio)[0]
+    return `**Resumen ${ult?.full ?? ''}**\n- Facturado ${cop(ult?.facturado ?? 0)}, recaudado ${cop(ult?.recaudado ?? 0)} (${pct(ult?.facturado ? ult.recaudado / ult.facturado : 0, 1)}).\n- ${morosos.length} usuarios en mora por ${cop(morosos.reduce((s, x) => s + resumenUsuario(x).deuda, 0))}.\n- Consumo total ${num(ult?.consumo ?? 0)} m³; el sector con mayor promedio es ${top?.sector ?? '—'} (${num(top?.consumoPromedio ?? 0, 1)} m³).\n- ${at.length} posible(s) fuga(s) por revisar.\n- ${ab.length} PQR abiertas, ${ab.filter((p) => diasHabilesRestantes(p.vence) < 0).length} vencidas.`
   }
 
   return null
@@ -305,7 +343,7 @@ export async function redactarJsonStream(url: string, modelo: string, sistema: s
     method: 'POST',
     signal,
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: modelo, stream: true, format: 'json', keep_alive: '30m', options: { temperature: 0.5, num_ctx: 2048, num_predict: 320, top_k: 30 }, messages: [{ role: 'system', content: sistema }, { role: 'user', content: pedido }] }),
+    body: JSON.stringify({ model: modelo, stream: true, format: 'json', keep_alive: '30m', options: { temperature: 0.5, num_ctx: NUM_CTX, num_predict: 320, top_k: 30 }, messages: [{ role: 'system', content: sistema }, { role: 'user', content: pedido }] }),
   })
   return leerStream(r, alEscribir)
 }

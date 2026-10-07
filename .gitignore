@@ -1,0 +1,28 @@
+# Archivos temporales de sincronización y pruebas
+*.tgz
+cambios-pendientes/
+APLICAR-CAMBIOS.bat
+Login-nuevo.tsx.txt
+Claude outputs/
+
+# Backend
+emcagua-backend/target/
+emcagua-backend/arranque.log
+emcagua-backend/reiniciar-base-de-datos.txt
+*.log
+
+# Frontend
+node_modules/
+emcagua-frontend/dist/
+
+# Editores y sistema
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Secretos (nunca subir)
+.env
+*.env.local
+clave-postgres.txt

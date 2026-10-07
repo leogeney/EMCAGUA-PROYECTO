@@ -34,8 +34,8 @@ export const normalizarCodigo = (c: string) => c.toUpperCase().replace(/[^A-Z0-9
 export const urlVerificacion = (id: string, codigo: string) => `${(cfg().urlPublica || window.location.origin).replace(/\/+$/, '')}/verificar?d=${encodeURIComponent(id)}&c=${codigo}`
 
 /* -------- Firmas de cada tipo (las mismas al imprimir y al verificar) -------- */
-export const codigoFactura = (f: { id: string; clienteId: string; monto: number }) => firmar(['FAC', f.id, f.clienteId, Math.round(f.monto)])
-export const codigoRecibo = (p: { id: string; clienteId: string; monto: number; timestamp: number }) => firmar(['PAG', p.id, p.clienteId, Math.round(p.monto), p.timestamp])
+export const codigoFactura = (f: { id: string; clienteId: string; monto: number; codigo?: string }) => f.codigo ?? firmar(['FAC', f.id, f.clienteId, Math.round(f.monto)])
+export const codigoRecibo = (p: { id: string; clienteId: string; monto: number; timestamp: number; codigo?: string }) => p.codigo ?? firmar(['PAG', p.id, p.clienteId, Math.round(p.monto), p.timestamp])
 const dia = (ts: number) => { const d = new Date(ts); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}` }
 export const codigoDocumento = (d: { consecutivo: string; plantillaId: string; dirigidoA: string; ts: number }) => firmar(['DOC', d.consecutivo, d.plantillaId, d.dirigidoA, dia(d.ts)])
 
@@ -56,6 +56,9 @@ const KEY = 'emcagua_documentos_verificables'
 let registro: Record<string, RegistroDoc> = (() => { try { return JSON.parse(localStorage.getItem(KEY) ?? '{}') } catch { return {} } })()
 const oyentes = new Set<() => void>()
 const guardar = () => { try { localStorage.setItem(KEY, JSON.stringify(registro)) } catch { /* sin almacenamiento */ } oyentes.forEach((f) => f()) }
+
+/** Con la API: el registro es la lista de documentos de la base de datos (no se guarda en el navegador). */
+export function reemplazarRegistro(lista: RegistroDoc[]) { registro = Object.fromEntries(lista.map((r) => [r.consecutivo, r])); oyentes.forEach((f) => f()) }
 
 export function registrarDocumento(r: RegistroDoc) { registro = { ...registro, [r.consecutivo]: r }; guardar() }
 export function anularDocumento(consecutivo: string, usuario: string, motivo: string) {

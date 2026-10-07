@@ -2,11 +2,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { getUsername } from '../utils/session'
+import { api, MODO_API } from './api'
 import { useData } from './DataContext'
 import { usePqr } from './PqrContext'
 import { useOperacion } from './OperacionContext'
 import { recomendacionesComoTexto, useRecomendaciones } from './recomendaciones'
-import { calentarOllama, destinoNavegacion, estadoOllama, preguntarOllamaStream, respuestaRapida, responderSinIA, resumenParaModelo, type Mensaje } from './asistente'
+import { calentarOllama, destinoNavegacion, estadoOllama, modeloPreferido, preguntarOllamaStream, respuestaRapida, responderSinIA, resumenParaModelo, type Mensaje } from './asistente'
 
 const leer = (k: string, d: string) => { try { return localStorage.getItem(k) ?? d } catch { return d } }
 const guardar = (k: string, v: string) => { try { localStorage.setItem(k, v) } catch { /* sin almacenamiento */ } }
@@ -59,7 +60,7 @@ export function AsistenteProvider({ children }: { children: ReactNode }) {
   const { materiales } = useOperacion()
   const navigate = useNavigate()
   const [usuario, setUsuario] = useState(() => getUsername(''))
-  const [chats, setChats] = useState<Chat[]>(() => cargarChats(getUsername('')))
+  const [chats, setChats] = useState<Chat[]>(() => (MODO_API ? [] : cargarChats(getUsername(''))))
   const [activaId, setActivaId] = useState<string | null>(null)
   const mensajes = useMemo(() => chats.find((c) => c.id === activaId)?.mensajes ?? [], [chats, activaId])
 
@@ -73,10 +74,52 @@ export function AsistenteProvider({ children }: { children: ReactNode }) {
   }, [pathname, usuario])
   // Guardar (sin el estado "escribiendo" de una respuesta a medias)
   useEffect(() => {
-    if (!usuario) return
+    if (!usuario || MODO_API) return
     const t = setTimeout(() => guardar(claveChats(usuario), JSON.stringify(chats.slice(0, MAX_CHATS).map((c) => ({ ...c, mensajes: c.mensajes.map(({ escribiendo: _e, ...m }) => m) })))), 400)
     return () => clearTimeout(t)
   }, [chats, usuario])
+
+  /* ---- Con la API: los chats se guardan en la base de datos (cada funcionario ve los suyos) ---- */
+  // Último contenido guardado de cada chat ("s12" = chat 12 del servidor; "c…" = nuevo, aún sin guardar)
+  const guardados = useRef(new Map<string, string>())
+  const creando = useRef(new Set<string>())
+  useEffect(() => {
+    if (!MODO_API) return
+    const t = setTimeout(async () => {
+      try {
+        const lista = await api<{ id: number; titulo: string; creada: string; actualizada: string; mensajes: Mensaje[] }[]>('/chats')
+        const cs: Chat[] = lista.map((c) => ({ id: `s${c.id}`, titulo: c.titulo, creada: Date.parse(c.creada), actualizada: Date.parse(c.actualizada), mensajes: c.mensajes.map((m) => ({ rol: m.rol, texto: m.texto, ...(m.fuente ? { fuente: m.fuente } : {}) })) }))
+        cs.forEach((c) => guardados.current.set(c.id, JSON.stringify({ titulo: c.titulo, mensajes: c.mensajes })))
+        setChats((locales) => [...locales.filter((c) => !c.id.startsWith('s')), ...cs])
+      } catch { /* sin conexión: se empieza vacío */ }
+    }, 0)
+    return () => clearTimeout(t)
+  }, [])
+  useEffect(() => {
+    if (!MODO_API) return
+    const t = setTimeout(() => {
+      for (const c of chats) {
+        if (c.mensajes.some((m) => m.escribiendo)) continue // se guarda cuando termine la respuesta
+        const contenido = { titulo: c.titulo, mensajes: c.mensajes.map(({ rol, texto, fuente }) => ({ rol, texto, fuente })) }
+        const json = JSON.stringify(contenido)
+        if (guardados.current.get(c.id) === json || !c.mensajes.length) continue
+        if (c.id.startsWith('s')) {
+          guardados.current.set(c.id, json)
+          void api(`/chats/${c.id.slice(1)}`, { metodo: 'PUT', cuerpo: contenido }).catch(() => guardados.current.delete(c.id))
+        } else if (!creando.current.has(c.id)) {
+          creando.current.add(c.id)
+          const local = c.id
+          void api<{ id: number }>('/chats', { metodo: 'POST', cuerpo: contenido }).then((r) => {
+            const nuevo = `s${r.id}`
+            guardados.current.set(nuevo, json)
+            setChats((cs) => cs.map((x) => (x.id === local ? { ...x, id: nuevo } : x)))
+            setActivaId((a) => (a === local ? nuevo : a))
+          }).catch(() => { /* se reintenta en el próximo cambio */ }).finally(() => creando.current.delete(local))
+        }
+      }
+    }, 800)
+    return () => clearTimeout(t)
+  }, [chats])
   const [pensando, setPensando] = useState(false)
   const [ia, setIa] = useState<{ ok: boolean; modelos: string[] } | null>(null)
   const [url, setUrlState] = useState(() => leer('emc_ollama_url', 'http://localhost:11434'))
@@ -92,7 +135,8 @@ export function AsistenteProvider({ children }: { children: ReactNode }) {
     const e = await estadoOllama(u)
     setIa(e)
     if (e.ok && e.modelos.length) {
-      const m = e.modelos.includes(modelo) ? modelo : e.modelos[0]
+      // Si el modelo guardado ya no está, se usa el más rápido instalado
+      const m = e.modelos.includes(modelo) ? modelo : modeloPreferido(e.modelos)
       if (m !== modelo) setModelo(m)
       calentarOllama(u, m) // deja el modelo cargado para que la primera respuesta no espere
     }
@@ -141,7 +185,7 @@ export function AsistenteProvider({ children }: { children: ReactNode }) {
     const base = [...historial, { rol: 'asistente' as const, texto: '', fuente: 'ollama' as const, escribiendo: true }]
     setMensajes(base)
     try {
-      const final = await preguntarOllamaStream(url, modelo, historial, `${resumenParaModelo(ctx, p)}\n\nRECOMENDACIONES QUE EL SISTEMA YA DETECTÓ (úsalas si vienen al caso):\n${recomendacionesComoTexto(recos, 6).replace(/\*\*/g, '')}`, (parcial) => setMensajes([...historial, { rol: 'asistente', texto: parcial, fuente: 'ollama', escribiendo: true }]), control.current.signal)
+      const final = await preguntarOllamaStream(url, modelo, historial, `${resumenParaModelo(ctx, p)}\n\nRECOMENDACIONES QUE EL SISTEMA YA DETECTÓ (úsalas si vienen al caso):\n${recomendacionesComoTexto(recos, 3).replace(/\*\*/g, '')}`, (parcial) => setMensajes([...historial, { rol: 'asistente', texto: parcial, fuente: 'ollama', escribiendo: true }]), control.current.signal)
       setMensajes([...historial, { rol: 'asistente', texto: final, fuente: 'ollama' }])
     } catch (e) {
       const cancelado = e instanceof DOMException && e.name === 'AbortError'
@@ -160,6 +204,7 @@ export function AsistenteProvider({ children }: { children: ReactNode }) {
   const nuevoChat = useCallback(() => { control.current?.abort(); setActivaId(null) }, [])
   const abrirChat = useCallback((id: string) => { control.current?.abort(); setActivaId(id) }, [])
   const borrarChat = useCallback((id: string) => {
+    if (MODO_API && id.startsWith('s')) { guardados.current.delete(id); void api(`/chats/${id.slice(1)}`, { metodo: 'DELETE' }).catch(() => { /* ya no estaba */ }) }
     setChats((cs) => cs.filter((c) => c.id !== id))
     setActivaId((a) => { if (a === id) { control.current?.abort(); return null } return a })
   }, [])

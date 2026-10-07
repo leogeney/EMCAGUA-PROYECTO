@@ -5,7 +5,7 @@
 import { vencimientoPeriodo } from './billing'
 import { MESES } from './constants'
 import { cfg } from './config'
-import { BARRIOS } from './constants'
+import { leerZonas } from './zonas'
 
 export type Formato = { id: string; nombre: string; uso: string; w: number; h: number }
 export const FORMATOS: Formato[] = [
@@ -216,9 +216,15 @@ export function borradorRapido(idea: string): { detalles: Detalle[]; tipo?: stri
   if (hr && +hr[1] <= 24 && +hr[4] <= 24) detalles.push({ icono: 'hora', texto: `${horaTexto(+hr[1], +(hr[2] ?? 0), hr[3] ?? 'manana')} a ${horaTexto(+hr[4], +(hr[5] ?? 0), hr[6])}` })
   else { const h1 = /(?:a las|desde las) (\d{1,2})(?::(\d{2}))? ?(de la manana|de la tarde|de la noche|am|pm)?/.exec(q); if (h1) detalles.push({ icono: 'hora', texto: `Desde las ${horaTexto(+h1[1], +(h1[2] ?? 0), h1[3])}` }) }
   // Lugar
-  const lugares = BARRIOS.filter((b) => q.includes(sinTildes(b)))
+  // Sectores y barrios nombrados en el aviso
+  const sectoresN = leerZonas().map((z) => z.nombre).filter((b) => q.includes(sinTildes(b)))
+  const barriosN = leerZonas().flatMap((z) => z.barrios.map((b) => b.nombre)).filter((b) => q.includes(sinTildes(b)))
+  const lugares = [...sectoresN, ...barriosN]
   const vereda = /\b(vereda|sector|barrio|calle|carrera) ([a-z0-9#\- ]{2,30}?)(?=[,.]| y | de | por | porque|$)/.exec(q)
-  if (lugares.length) { const bs = lugares.filter((b) => b !== 'Guamalito'); const partes = [bs.length ? `${bs.length > 1 ? 'Barrios' : 'Barrio'} ${bs.join(' y ')}` : '', lugares.includes('Guamalito') ? 'Guamalito' : ''].filter(Boolean); detalles.push({ icono: 'lugar', texto: lugares.length > 3 ? 'Todo el municipio' : partes.join(' y ') }) }
+  if (lugares.length) {
+    const partes = [sectoresN.length ? `${sectoresN.length > 1 ? 'Sectores' : 'Sector'} ${sectoresN.join(' y ')}` : '', barriosN.length ? `${barriosN.length > 1 ? 'barrios' : 'barrio'} ${barriosN.join(' y ')}` : ''].filter(Boolean)
+    detalles.push({ icono: 'lugar', texto: sectoresN.length >= 4 ? 'Todo el municipio' : partes.join(' · ').replace(/^b/, 'B') })
+  }
   else if (vereda) detalles.push({ icono: 'lugar', texto: `${vereda[1][0].toUpperCase()}${vereda[1].slice(1)} ${vereda[2].replace(/\b\w/g, (c) => c.toUpperCase()).trim()}` })
   // Tipo
   const tipo = /(sin agua|no habra agua|suspen|corte|cortar|no hay servicio)/.test(q) ? 'corte'

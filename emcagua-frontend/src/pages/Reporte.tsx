@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
+import { ubicacion } from '../data/zonas'
 import { useData } from '../data/DataContext'
 import { usePqr } from '../data/PqrContext'
 import { CHART } from '../data/constants'
-import { consumosAtipicos, edadCartera, porBarrio, porEstrato, serieMensual } from '../data/analytics'
+import { consumosAtipicos, edadCartera, porSector, porEstrato, serieMensual } from '../data/analytics'
 import { diasHabilesRestantes } from '../data/pqr'
 import { ColumnChart, Legend } from '../components/charts/charts'
 import Ico from '../components/ui/Icon'
@@ -18,7 +19,7 @@ export default function Reporte() {
   const p = serieTodo[idx]
   const ant = serieTodo[idx - 1]
   const serie = serieTodo.slice(Math.max(0, idx - 5), idx + 1)
-  const barrios = porBarrio(usuarios)
+  const barrios = porSector(usuarios)
   const estratos = porEstrato(usuarios)
   const cartera = edadCartera(usuarios)
   const atipicos = consumosAtipicos(usuarios).slice(0, 6)
@@ -94,10 +95,10 @@ export default function Reporte() {
 
         <section className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           <div>
-            <h2 className="text-base font-bold text-dark mb-2">3. Consumo y mora por barrio</h2>
+            <h2 className="text-base font-bold text-dark mb-2">3. Consumo y mora por sector</h2>
             <table className="w-full text-xs">
-              <thead><tr className="text-gray-500 border-b border-gray-200"><th className="text-left py-1.5">Barrio</th><th className="text-right">Usuarios</th><th className="text-right">Prom. m³</th><th className="text-right">En mora</th></tr></thead>
-              <tbody>{barrios.map((b) => <tr key={b.barrio} className="border-b border-gray-100"><td className="py-1.5">{b.barrio}</td><td className="text-right">{b.usuarios}</td><td className="text-right">{num(b.consumoPromedio, 1)}</td><td className="text-right">{b.morosos}</td></tr>)}</tbody>
+              <thead><tr className="text-gray-500 border-b border-gray-200"><th className="text-left py-1.5">Sector</th><th className="text-right">Usuarios</th><th className="text-right">Prom. m³</th><th className="text-right">En mora</th></tr></thead>
+              <tbody>{barrios.map((b) => <tr key={b.sector} className="border-b border-gray-100"><td className="py-1.5">{b.sector}</td><td className="text-right">{b.usuarios}</td><td className="text-right">{num(b.consumoPromedio, 1)}</td><td className="text-right">{b.morosos}</td></tr>)}</tbody>
             </table>
             <table className="w-full text-xs mt-3">
               <thead><tr className="text-gray-500 border-b border-gray-200"><th className="text-left py-1.5">Estrato</th><th className="text-right">Usuarios</th><th className="text-right">Morosidad</th><th className="text-right">Cartera</th></tr></thead>
@@ -123,8 +124,8 @@ export default function Reporte() {
           <h2 className="text-base font-bold text-dark mb-2">6. Posibles fugas o errores de lectura</h2>
           {atipicos.length === 0 ? <p className="text-xs text-gray-500">No se detectaron consumos atípicos.</p> : (
             <table className="w-full text-xs">
-              <thead><tr className="text-gray-500 border-b border-gray-200"><th className="text-left py-1.5">Usuario</th><th className="text-left">Barrio</th><th className="text-right">Consumo</th><th className="text-right">Promedio</th><th className="text-right">Variación</th></tr></thead>
-              <tbody>{atipicos.map((a) => <tr key={a.usuario.id} className="border-b border-gray-100"><td className="py-1.5">{a.usuario.nombre}</td><td>{a.usuario.barrio}</td><td className="text-right">{a.actual} m³</td><td className="text-right">{num(a.promedio, 1)} m³</td><td className="text-right font-semibold">+{pct(a.variacion)}</td></tr>)}</tbody>
+              <thead><tr className="text-gray-500 border-b border-gray-200"><th className="text-left py-1.5">Usuario</th><th className="text-left">Ubicación</th><th className="text-right">Consumo</th><th className="text-right">Promedio</th><th className="text-right">Variación</th></tr></thead>
+              <tbody>{atipicos.map((a) => <tr key={a.usuario.id} className="border-b border-gray-100"><td className="py-1.5">{a.usuario.nombre}</td><td>{ubicacion(a.usuario)}</td><td className="text-right">{a.actual} m³</td><td className="text-right">{num(a.promedio, 1)} m³</td><td className="text-right font-semibold">+{pct(a.variacion)}</td></tr>)}</tbody>
             </table>
           )}
         </section>

@@ -4,6 +4,7 @@
  * las validará el servidor (con cifrado) cuando exista.
  */
 import { useSyncExternalStore } from 'react'
+import { api, MODO_API } from './api'
 
 export type Modulo = { id: string; nombre: string; grupo: string }
 
@@ -73,17 +74,38 @@ const oyentes = new Set<() => void>()
 
 function guardar(e: Estado) {
   estado = e
-  try { localStorage.setItem(KEY, JSON.stringify(e)) } catch { /* sin almacenamiento */ }
+  // Con la API las cuentas viven en la base de datos (y las contraseñas, cifradas, solo allá)
+  if (!MODO_API) { try { localStorage.setItem(KEY, JSON.stringify(e)) } catch { /* sin almacenamiento */ } }
   oyentes.forEach((f) => f())
 }
 
 export const leerCuentas = () => estado
 export const useCuentas = () => useSyncExternalStore((f) => { oyentes.add(f); return () => { oyentes.delete(f) } }, leerCuentas)
 
-export const guardarCuenta = (c: Cuenta) => guardar({ ...estado, cuentas: estado.cuentas.some((x) => x.usuario === c.usuario) ? estado.cuentas.map((x) => (x.usuario === c.usuario ? c : x)) : [...estado.cuentas, c] })
-export const guardarRol = (r: Rol) => guardar({ ...estado, roles: estado.roles.some((x) => x.id === r.id) ? estado.roles.map((x) => (x.id === r.id ? r : x)) : [...estado.roles, r] })
-export const borrarRol = (id: string) => guardar({ ...estado, roles: estado.roles.filter((r) => r.id !== id || r.fijo) })
-export const registrarAcceso = (usuario: string) => guardar({ ...estado, cuentas: estado.cuentas.map((c) => (c.usuario === usuario ? { ...c, ultimoAcceso: Date.now() } : c)) })
+/** Con sesión: trae roles y cuentas de la base de datos. */
+export async function cargarCuentasApi() {
+  if (!MODO_API) return
+  try { guardar(await api<Estado>('/vista/cuentas')) } catch { /* se quedan las que había */ }
+}
+
+/** Cambio en pantalla y, con la API, en el servidor. Si el servidor lo rechaza se vuelve a leer y se lanza el error. */
+async function enServidor(local: Estado, ruta: string, metodo: string, cuerpo?: unknown) {
+  guardar(local)
+  if (!MODO_API) return
+  try { await api(ruta, { metodo, cuerpo }) } catch (e) { await cargarCuentasApi(); throw e }
+  await cargarCuentasApi()
+}
+
+/** Guarda la cuenta. `clave` (opcional): contraseña nueva; obligatoria al crear una cuenta en la base de datos. */
+export const guardarCuenta = (c: Cuenta, clave?: string) => enServidor(
+  { ...estado, cuentas: estado.cuentas.some((x) => x.usuario === c.usuario) ? estado.cuentas.map((x) => (x.usuario === c.usuario ? c : x)) : [...estado.cuentas, c] },
+  `/vista/cuentas/${c.usuario}`, 'PUT', { usuario: c.usuario, nombre: c.nombre, cargo: c.cargo, rol: c.rol, activo: c.activo, clave: clave || undefined })
+export const guardarRol = (r: Rol) => enServidor(
+  { ...estado, roles: estado.roles.some((x) => x.id === r.id) ? estado.roles.map((x) => (x.id === r.id ? r : x)) : [...estado.roles, r] },
+  `/vista/roles/${r.id}`, 'PUT', { nombre: r.nombre, descripcion: r.descripcion, permisos: r.permisos })
+export const borrarRol = (id: string) => enServidor({ ...estado, roles: estado.roles.filter((r) => r.id !== id || r.fijo) }, `/vista/roles/${id}`, 'DELETE')
+/** El servidor anota el último acceso al iniciar sesión; en demostración se anota aquí. */
+export const registrarAcceso = (usuario: string) => { if (!MODO_API) guardar({ ...estado, cuentas: estado.cuentas.map((c) => (c.usuario === usuario ? { ...c, ultimoAcceso: Date.now() } : c)) }) }
 
 export const buscarCuenta = (usuario: string) => estado.cuentas.find((c) => c.usuario.toLowerCase() === usuario.trim().toLowerCase())
 export const rolDe = (c?: Cuenta) => estado.roles.find((r) => r.id === c?.rol)

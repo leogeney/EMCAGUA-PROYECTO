@@ -1,7 +1,8 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { login } from '../utils/session'
 import { buscarCuenta, registrarAcceso } from '../data/cuentas'
+import { API_URL, ErrorApi, loginApi } from '../data/api'
 import Icon from '../components/ui/Icon'
 
 const Ico = ({ d, className = 'w-[18px] h-[18px]' }: { d: string; className?: string }) => <Icon d={d} className={className} />
@@ -19,10 +20,26 @@ const D = {
 }
 
 const FEATURES = [
-  { icon: D.receipt, title: 'Facturación y pagos', desc: 'Cobro en caja, recibos y cortes del primer viernes' },
-  { icon: D.chart, title: 'Analítica de consumo', desc: 'Indicadores de recaudo, cartera y barrios' },
-  { icon: D.bell, title: 'Alertas inteligentes', desc: 'Consumos atípicos y posibles fugas' },
+  { icon: D.receipt, title: 'Facturación y caja', desc: 'Cobro con o sin medidor, recibos y cierres' },
+  { icon: D.chart, title: 'Analítica', desc: 'Recaudo, cartera y consumo por sector' },
+  { icon: D.bell, title: 'Atención al usuario', desc: 'PQR, avisos y oficina virtual' },
 ]
+
+/** Pregunta si el servidor responde (para mostrar si se trabaja con la base de datos o en modo de prueba). */
+function useServidor() {
+  const [estado, setEstado] = useState<'revisando' | 'ok' | 'apagado'>('revisando')
+  useEffect(() => {
+    let vivo = true
+    const ctrl = new AbortController()
+    const t = setTimeout(() => ctrl.abort(), 4000)
+    fetch(`${API_URL}/api/configuracion/publica`, { signal: ctrl.signal })
+      .then((r) => { if (vivo) setEstado(r.ok ? 'ok' : 'apagado') })
+      .catch(() => { if (vivo) setEstado('apagado') })
+      .finally(() => clearTimeout(t))
+    return () => { vivo = false; clearTimeout(t); ctrl.abort() }
+  }, [])
+  return estado
+}
 
 export default function Login() {
   const navigate = useNavigate()
@@ -30,212 +47,181 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [olvido, setOlvido] = useState(false)
+  const servidor = useServidor()
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!form.username.trim() || !form.password) {
       setError('Ingresa tu usuario y contraseña')
       return
     }
-    const cuenta = buscarCuenta(form.username)
-    if (!cuenta) { setError('Ese usuario no existe. Pídele al gerente que te cree una cuenta.'); return }
-    if (!cuenta.activo) { setError('Tu cuenta está desactivada. Habla con el gerente.'); return }
     setError('')
     setLoading(true)
-    setTimeout(() => {
-      login(cuenta.usuario)
-      registrarAcceso(cuenta.usuario)
-      navigate('/mi-dia')
-    }, 600)
+    // 1) Con la API encendida, la clave se valida en el servidor y los datos salen de la base de datos.
+    const r = await loginApi(form.username.trim(), form.password)
+    if (r instanceof ErrorApi) { setLoading(false); setError(r.message); return }
+    if (r) {
+      login(r.cuenta.usuario, { token: r.token, cuenta: r.cuenta })
+      window.location.assign('/mi-dia') // recarga para que todo se lea de la API
+      return
+    }
+    // 2) Sin API: modo demostración con las cuentas guardadas en el navegador.
+    const cuenta = buscarCuenta(form.username)
+    if (!cuenta) { setLoading(false); setError('Ese usuario no existe. Pídele al gerente que te cree una cuenta.'); return }
+    if (!cuenta.activo) { setLoading(false); setError('Tu cuenta está desactivada. Habla con el gerente.'); return }
+    login(cuenta.usuario)
+    registrarAcceso(cuenta.usuario)
+    navigate('/mi-dia')
   }
 
+  const campo = 'w-full h-12 pl-11 pr-4 rounded-xl border border-gray-200 bg-white text-[15px] text-dark placeholder:text-gray-400 focus:outline-none focus:ring-4 focus:ring-secondary/10 focus:border-secondary transition-all'
+
   return (
-    <div className="min-h-screen flex bg-white">
-      {/* ---------- Panel de marca ---------- */}
-      <aside className="hidden lg:flex lg:w-[52%] xl:w-[55%] relative overflow-hidden bg-[#0B3F3F] text-white">
-        {/* Fondo */}
-        <div className="absolute inset-0 bg-gradient-to-br from-secondary via-[#0F5656] to-[#082E2E]" />
-        <div className="absolute -top-32 -right-24 w-[520px] h-[520px] rounded-full bg-primary/25 blur-[120px]" />
-        <div className="absolute bottom-10 -left-32 w-[420px] h-[420px] rounded-full bg-[#2bb3a3]/20 blur-[110px]" />
-        <div
-          className="absolute inset-0 opacity-[0.07]"
-          style={{ backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1.4px)', backgroundSize: '22px 22px' }}
-        />
+    <div className="min-h-screen flex bg-[#F4F5F3]">
+      {/* ---------- Panel de marca (escritorio) ---------- */}
+      <aside className="hidden lg:flex lg:w-[46%] xl:w-[44%] relative overflow-hidden text-white">
+        <div className="absolute inset-0 bg-gradient-to-b from-[#125F5F] via-[#0E4C4C] to-[#093838]" />
+        <div className="absolute -top-40 -left-24 w-[460px] h-[460px] rounded-full bg-primary/20 blur-[110px]" />
+        {/* Gota grande de fondo */}
+        <svg className="absolute -right-24 top-1/2 -translate-y-1/2 h-[120%] opacity-[0.07]" viewBox="0 0 100 130" aria-hidden="true">
+          <path fill="#fff" d="M50 4C50 4 8 54 8 82a42 42 0 0084 0C92 54 50 4 50 4z" />
+        </svg>
         {/* Olas */}
-        <svg className="absolute bottom-0 left-0 w-[200%] h-40 animate-[wave_18s_linear_infinite] opacity-[0.12]" viewBox="0 0 1440 160" preserveAspectRatio="none" aria-hidden="true">
+        <svg className="absolute bottom-0 left-0 w-[200%] h-32 animate-[wave_20s_linear_infinite] opacity-[0.10]" viewBox="0 0 1440 160" preserveAspectRatio="none" aria-hidden="true">
           <path fill="#fff" d="M0 80c120 40 240 40 360 0s240-40 360 0 240 40 360 0 240-40 360 0v80H0z" />
         </svg>
-        <svg className="absolute bottom-0 left-0 w-[200%] h-28 animate-[wave_12s_linear_infinite_reverse] opacity-[0.10]" viewBox="0 0 1440 160" preserveAspectRatio="none" aria-hidden="true">
+        <svg className="absolute bottom-0 left-0 w-[200%] h-20 animate-[wave_13s_linear_infinite_reverse] opacity-[0.16]" viewBox="0 0 1440 160" preserveAspectRatio="none" aria-hidden="true">
           <path fill="#8AC43A" d="M0 90c120-30 240-30 360 0s240 30 360 0 240-30 360 0 240 30 360 0v70H0z" />
         </svg>
 
-        <div className="relative z-10 flex flex-col justify-between w-full p-12 xl:p-16">
-          {/* Marca */}
+        <div className="relative z-10 flex flex-col w-full px-12 xl:px-16 py-12">
           <div className="flex items-center gap-3">
-            <div className="h-12 w-12 rounded-2xl bg-white/95 shadow-lg shadow-black/10 flex items-center justify-center">
-              <img src="/logo_circulo.png" alt="" className="h-9 w-9 object-contain" />
+            <div className="h-12 w-12 rounded-full bg-white shadow-lg shadow-black/15 flex items-center justify-center">
+              <img src="/logo_circulo.png" alt="" className="h-10 w-10 object-contain" />
             </div>
             <div className="leading-tight">
               <p className="text-lg font-extrabold tracking-tight">EMCAGUA <span className="text-primary-light">APC</span></p>
-              <p className="text-xs text-white/60">El Carmen · Guamalito</p>
+              <p className="text-xs text-white/60">Servicios públicos de El Carmen y Guamalito</p>
             </div>
           </div>
 
-          {/* Mensaje + vista previa */}
-          <div className="max-w-xl">
-            <span className="inline-flex items-center gap-2 h-7 px-3 rounded-full bg-white/10 border border-white/15 text-xs font-medium text-white/80 backdrop-blur">
-              <span className="h-1.5 w-1.5 rounded-full bg-primary-light" /> Portal interno de gestión
-            </span>
-            <h1 className="mt-5 text-[38px] xl:text-[50px] font-extrabold leading-[1.05] tracking-tight">
-              Agua bien gestionada,<br />
-              <span className="bg-gradient-to-r from-primary-light to-[#c7ef8f] bg-clip-text text-transparent">comunidad bien servida.</span>
+          <div className="my-auto py-10 max-w-md">
+            <p className="text-xs font-semibold tracking-[0.18em] uppercase text-primary-light">Sistema de gestión</p>
+            <h1 className="mt-4 text-[34px] xl:text-[40px] font-extrabold leading-[1.1] tracking-tight">
+              El agua de El Carmen, bien administrada.
             </h1>
-            <p className="mt-5 text-base text-white/70 max-w-md leading-relaxed">
-              Usuarios, facturación, pagos y analítica del servicio de acueducto y alcantarillado en un solo lugar.
+            <p className="mt-4 text-[15px] text-white/70 leading-relaxed">
+              Usuarios, facturación, pagos y atención del acueducto y alcantarillado en un solo lugar.
             </p>
-
-            {/* Tarjeta de vista previa */}
-            <div className="mt-10 relative hidden [@media(min-height:740px)]:block">
-              <div className="rounded-3xl bg-white/[0.07] border border-white/15 backdrop-blur-xl p-5 shadow-2xl shadow-black/20 max-w-md">
-                <div className="flex items-center justify-between">
+            <ul className="mt-9 space-y-5">
+              {FEATURES.map((f) => (
+                <li key={f.title} className="flex items-start gap-3.5">
+                  <span className="h-10 w-10 shrink-0 rounded-xl bg-white/10 ring-1 ring-white/15 flex items-center justify-center text-primary-light"><Ico d={f.icon} /></span>
                   <div>
-                    <p className="text-[11px] uppercase tracking-[0.14em] text-white/50 font-semibold">Recaudo del mes</p>
-                    <p className="text-2xl font-extrabold mt-1">$2,8 M</p>
+                    <p className="text-sm font-semibold">{f.title}</p>
+                    <p className="text-[13px] text-white/60 mt-0.5">{f.desc}</p>
                   </div>
-                  <span className="text-xs font-bold text-[#c7ef8f] bg-primary/20 px-2 py-1 rounded-lg">▲ 82% al día</span>
-                </div>
-                <div className="mt-4 flex items-end gap-1.5 h-16">
-                  {[48, 56, 52, 64, 70, 66, 58, 62, 74, 68, 80, 72].map((h, i) => (
-                    <div key={i} className={`flex-1 rounded-t-[4px] ${i === 10 ? 'bg-primary-light' : 'bg-white/25'}`} style={{ height: `${h}%` }} />
-                  ))}
-                </div>
-              </div>
-              <div className="absolute -right-2 xl:-right-10 -bottom-6 rounded-2xl bg-white text-dark shadow-2xl px-4 py-3 flex items-center gap-3 animate-[float_6s_ease-in-out_infinite]">
-                <span className="h-9 w-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center"><Ico d={D.alert} /></span>
-                <div>
-                  <p className="text-xs font-bold">Consumo atípico</p>
-                  <p className="text-[11px] text-gray-500">2 posibles fugas detectadas</p>
-                </div>
-              </div>
-            </div>
+                </li>
+              ))}
+            </ul>
           </div>
 
-          {/* Funciones */}
-          <div className="hidden [@media(min-height:860px)]:grid grid-cols-3 gap-4 max-w-2xl">
-            {FEATURES.map((f) => (
-              <div key={f.title}>
-                <span className="h-9 w-9 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center text-primary-light"><Ico d={f.icon} /></span>
-                <p className="mt-3 text-sm font-semibold">{f.title}</p>
-                <p className="text-xs text-white/55 mt-1 leading-relaxed">{f.desc}</p>
-              </div>
-            ))}
-          </div>
+          <p className="text-xs text-white/45">© {new Date().getFullYear()} EMCAGUA APC · El Carmen, Norte de Santander</p>
         </div>
       </aside>
 
       {/* ---------- Formulario ---------- */}
-      <main className="flex-1 flex flex-col relative">
-        {/* Fondo suave (móvil y escritorio) */}
-        <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_top_right,rgba(138,196,58,0.10),transparent_55%),radial-gradient(ellipse_at_bottom_left,rgba(21,109,109,0.08),transparent_55%)]" />
-
-        <div className="relative flex-1 flex items-center justify-center px-6 py-12">
-          <div className="w-full max-w-[400px] animate-[pop_.35s_ease-out]">
-            {/* Logo grande */}
-            <div className="flex flex-col items-center text-center">
-              <div className="relative">
-                <div className="absolute inset-0 rounded-full bg-primary/30 blur-2xl scale-110" />
-                <img src="/logo_circulo.png" alt="EMCAGUA APC" className="relative h-20 w-20 object-contain drop-shadow-sm" />
-              </div>
-              <h2 className="mt-6 text-[28px] font-extrabold tracking-tight text-dark leading-tight">Bienvenido de nuevo</h2>
-              <p className="mt-2 text-sm text-gray-500">Ingresa con tu cuenta de trabajador de EMCAGUA</p>
-            </div>
-
-            <form onSubmit={handleSubmit} className="mt-9 space-y-4" noValidate>
-              <div>
-                <label htmlFor="username" className="block text-sm font-semibold text-dark mb-2">Usuario</label>
-                <div className="relative group">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-secondary transition-colors"><Ico d={D.user} /></span>
-                  <input
-                    id="username"
-                    autoComplete="username"
-                    autoFocus
-                    value={form.username}
-                    onChange={(e) => { setForm({ ...form, username: e.target.value }); setError('') }}
-                    placeholder="nombre.apellido"
-                    className="w-full h-12 pl-12 pr-4 rounded-2xl border border-gray-200 bg-white/80 text-[15px] text-dark placeholder:text-gray-400 shadow-sm focus:outline-none focus:ring-4 focus:ring-secondary/10 focus:border-secondary transition-all"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label htmlFor="password" className="block text-sm font-semibold text-dark">Contraseña</label>
-                  <button type="button" className="text-xs font-semibold text-secondary hover:text-secondary-dark">¿La olvidaste?</button>
-                </div>
-                <div className="relative group">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-secondary transition-colors"><Ico d={D.lock} /></span>
-                  <input
-                    id="password"
-                    type={showPassword ? 'text' : 'password'}
-                    autoComplete="current-password"
-                    value={form.password}
-                    onChange={(e) => { setForm({ ...form, password: e.target.value }); setError('') }}
-                    placeholder="••••••••"
-                    className="w-full h-12 pl-12 pr-12 rounded-2xl border border-gray-200 bg-white/80 text-[15px] text-dark placeholder:text-gray-400 shadow-sm focus:outline-none focus:ring-4 focus:ring-secondary/10 focus:border-secondary transition-all"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((s) => !s)}
-                    aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-xl text-gray-400 hover:text-dark hover:bg-gray-100 flex items-center justify-center transition-colors"
-                  >
-                    <Ico d={showPassword ? D.eyeOff : D.eye} />
-                  </button>
-                </div>
-              </div>
-
-              {error && (
-                <div className="flex items-center gap-2 rounded-xl bg-red-50 border border-red-100 px-3 py-2.5 text-sm text-red-700 animate-[pop_.15s_ease-out]">
-                  <Ico d={D.alert} className="w-4 h-4 shrink-0" /> {error}
-                </div>
-              )}
-
-              <label className="flex items-center gap-2.5 cursor-pointer select-none w-fit pt-1">
-                <input type="checkbox" className="w-4 h-4 rounded accent-secondary" />
-                <span className="text-sm text-gray-600">Mantener sesión iniciada</span>
-              </label>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="group relative w-full h-12 mt-2 rounded-2xl bg-secondary text-white font-semibold text-[15px] shadow-lg shadow-secondary/25 hover:bg-secondary-dark hover:shadow-xl hover:shadow-secondary/30 active:scale-[0.99] disabled:opacity-80 transition-all overflow-hidden"
-              >
-                <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
-                <span className="relative flex items-center justify-center gap-2">
-                  {loading ? (
-                    <>
-                      <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-                      Ingresando…
-                    </>
-                  ) : (
-                    <>
-                      Ingresar
-                      <Ico d={D.arrow} className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
-                    </>
-                  )}
-                </span>
-              </button>
-            </form>
-
-            <div className="mt-8 rounded-2xl border border-dashed border-amber-200 bg-amber-50/60 px-4 py-3 text-center">
-              <p className="text-xs text-amber-800"><span className="font-semibold">Modo demostración:</span> entra con <b>admin</b> (gerente), <b>yaneth</b> (cajera), <b>diana</b> (atención), <b>alvaro</b> (técnico) o <b>martha</b> (contadora), con cualquier contraseña. Cada rol ve solo sus módulos.</p>
+      <main className="flex-1 flex flex-col min-w-0">
+        {/* Encabezado en celular */}
+        <div className="lg:hidden relative overflow-hidden bg-gradient-to-br from-[#125F5F] to-[#093838] text-white px-6 pt-10 pb-16">
+          <svg className="absolute bottom-0 left-0 w-[200%] h-14 animate-[wave_16s_linear_infinite] opacity-[0.14]" viewBox="0 0 1440 160" preserveAspectRatio="none" aria-hidden="true">
+            <path fill="#8AC43A" d="M0 90c120-30 240-30 360 0s240 30 360 0 240-30 360 0 240 30 360 0v70H0z" />
+          </svg>
+          <div className="relative flex items-center gap-3">
+            <div className="h-12 w-12 rounded-full bg-white flex items-center justify-center shadow-lg shadow-black/15"><img src="/logo_circulo.png" alt="" className="h-10 w-10 object-contain" /></div>
+            <div className="leading-tight">
+              <p className="text-lg font-extrabold">EMCAGUA <span className="text-primary-light">APC</span></p>
+              <p className="text-xs text-white/65">Sistema de gestión</p>
             </div>
           </div>
         </div>
 
-        <footer className="relative px-6 pb-6 text-center text-xs text-gray-400">
-          © {new Date().getFullYear()} EMCAGUA APC · Acceso exclusivo para personal autorizado
-        </footer>
+        <div className="relative z-10 flex-1 flex items-start lg:items-center justify-center px-4 sm:px-6 -mt-10 lg:mt-0 pb-8 lg:py-10">
+          <div className="w-full max-w-[420px] animate-[pop_.35s_ease-out]">
+            <div className="bg-white rounded-3xl shadow-xl shadow-black/[0.06] ring-1 ring-black/[0.04] p-7 sm:p-9">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-2xl font-extrabold tracking-tight text-dark">Iniciar sesión</h2>
+                  <p className="mt-1 text-sm text-gray-500">Acceso para funcionarios de EMCAGUA</p>
+                </div>
+                <span title={servidor === 'apagado' ? 'El servidor no responde: se abrirá en modo de prueba con datos de ejemplo' : undefined}
+                  className={`shrink-0 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-[11px] font-semibold ${servidor === 'ok' ? 'bg-green-50 text-green-700' : servidor === 'apagado' ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${servidor === 'ok' ? 'bg-green-500' : servidor === 'apagado' ? 'bg-amber-500' : 'bg-gray-400 animate-pulse'}`} />
+                  {servidor === 'ok' ? 'En línea' : servidor === 'apagado' ? 'Modo prueba' : 'Conectando'}
+                </span>
+              </div>
+
+              <form onSubmit={handleSubmit} className="mt-7 space-y-4" noValidate>
+                <div>
+                  <label htmlFor="username" className="block text-sm font-semibold text-dark mb-1.5">Usuario</label>
+                  <div className="relative group">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-secondary transition-colors"><Ico d={D.user} /></span>
+                    <input id="username" autoComplete="username" autoFocus value={form.username}
+                      onChange={(e) => { setForm({ ...form, username: e.target.value }); setError('') }}
+                      placeholder="Tu usuario" className={campo} />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label htmlFor="password" className="block text-sm font-semibold text-dark">Contraseña</label>
+                    <button type="button" onClick={() => setOlvido((x) => !x)} className="text-xs font-semibold text-secondary hover:text-secondary-dark">¿La olvidaste?</button>
+                  </div>
+                  <div className="relative group">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-secondary transition-colors"><Ico d={D.lock} /></span>
+                    <input id="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={form.password}
+                      onChange={(e) => { setForm({ ...form, password: e.target.value }); setError('') }}
+                      placeholder="••••••••" className={`${campo} pr-12`} />
+                    <button type="button" onClick={() => setShowPassword((x) => !x)} aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 h-9 w-9 rounded-lg text-gray-400 hover:text-dark hover:bg-gray-100 flex items-center justify-center transition-colors">
+                      <Ico d={showPassword ? D.eyeOff : D.eye} />
+                    </button>
+                  </div>
+                  {olvido && <p className="mt-2 text-xs text-gray-600 bg-gray-soft rounded-lg px-3 py-2 animate-[pop_.15s_ease-out]">Pídele al gerente que te asigne una contraseña nueva desde <b>Cuentas y roles</b>.</p>}
+                </div>
+
+                {error && (
+                  <div className="flex items-center gap-2 rounded-xl bg-red-50 border border-red-100 px-3 py-2.5 text-sm text-red-700 animate-[pop_.15s_ease-out]">
+                    <Ico d={D.alert} className="w-4 h-4 shrink-0" /> {error}
+                  </div>
+                )}
+
+                <button type="submit" disabled={loading}
+                  className="group w-full h-12 !mt-6 rounded-xl bg-secondary text-white font-semibold text-[15px] shadow-lg shadow-secondary/20 hover:bg-secondary-dark active:scale-[0.99] disabled:opacity-80 transition-all flex items-center justify-center gap-2">
+                  {loading
+                    ? <><span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" /> Ingresando…</>
+                    : <>Ingresar <Ico d={D.arrow} className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" /></>}
+                </button>
+              </form>
+            </div>
+
+            <Link to="/portal" className="mt-4 flex items-center gap-3 rounded-2xl bg-white/70 hover:bg-white ring-1 ring-black/[0.04] px-4 py-3.5 transition-colors group">
+              <span className="h-10 w-10 shrink-0 rounded-xl bg-primary/15 text-primary-700 flex items-center justify-center"><Ico d={D.receipt} /></span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-sm font-semibold text-dark">¿Eres usuario del servicio?</span>
+                <span className="block text-xs text-gray-500">Consulta y paga tu factura en la oficina virtual</span>
+              </span>
+              <Ico d={D.arrow} className="w-4 h-4 text-gray-400 group-hover:text-dark group-hover:translate-x-0.5 transition-all" />
+            </Link>
+
+            <p className="mt-6 text-center text-xs text-gray-400">
+              <Link to="/verificar" className="hover:text-dark">Verificar un documento</Link>
+              <span className="mx-2">·</span>
+              Acceso exclusivo para personal autorizado
+            </p>
+          </div>
+        </div>
       </main>
     </div>
   )

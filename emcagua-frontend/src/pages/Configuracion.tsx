@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { CONFIG_INICIAL, guardarConfig, lineaContacto, useConfig, type Config } from '../data/config'
 import { useToast } from '../components/ui/Toast'
+import SectoresBarrios from '../components/SectoresBarrios'
+import { Interruptor } from '../components/ModoSinMedidores'
 import { cop, pct } from '../utils/format'
 
 type CampoTexto = { k: keyof Config; label: string; placeholder?: string; ancho?: boolean }
@@ -25,7 +27,7 @@ export default function Configuracion() {
   const [c, setC] = useState<Config>(actual)
   const cambios = JSON.stringify(c) !== JSON.stringify(actual)
   const set = <K extends keyof Config>(k: K, v: Config[K]) => setC((x) => ({ ...x, [k]: v }))
-  const num = (k: 'reconexion' | 'umbralAlto' | 'baseCaja', label: string, sufijo: string, ayuda: string) => (
+  const num = (k: 'reconexion' | 'umbralAlto' | 'baseCaja' | 'cobroFijoEstrato1' | 'cobroFijoEstrato2' | 'cobroFijoEstrato3', label: string, sufijo: string, ayuda: string) => (
     <div>
       <label className="field-label">{label}</label>
       <div className="relative"><input type="number" min={0} value={c[k]} onChange={(e) => set(k, Number(e.target.value) || 0)} className="field pr-14 tabular-nums" /><span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">{sufijo}</span></div>
@@ -43,7 +45,7 @@ export default function Configuracion() {
         </div>
         <div className="flex gap-2">
           <button disabled={!cambios} onClick={() => setC(actual)} className="btn-secondary">Descartar</button>
-          <button disabled={!cambios} onClick={() => { guardarConfig(c); toast('Configuración guardada', 'Los documentos y avisos nuevos ya usan estos datos.') }} className="btn-primary">Guardar cambios</button>
+          <button disabled={!cambios} onClick={async () => { try { await guardarConfig(c); toast('Configuración guardada', 'Los documentos y avisos nuevos ya usan estos datos.') } catch (e) { toast('No se guardó la configuración', e instanceof Error ? e.message : String(e), 'warning') } }} className="btn-primary">Guardar cambios</button>
         </div>
       </div>
 
@@ -74,6 +76,25 @@ export default function Configuracion() {
               </div>
             </div>
           </section>
+
+          <section className="card p-5">
+            <h2 className="font-bold text-dark mb-1">Cobro sin medidor</h2>
+            <p className="text-xs text-gray-500 mb-4">Los predios sin medidor pagan este valor fijo cada mes según su estrato. Cuando se instale el medidor, se marca en el predio y desde la siguiente factura se cobra por consumo.</p>
+            <div className={`rounded-2xl border p-4 mb-4 flex items-start gap-4 ${c.modoSinMedidores ? 'border-amber-200 bg-amber-50' : 'border-gray-100'}`}>
+              <div className="flex-1">
+                <p className="font-semibold text-dark text-sm">Modo sin medidores {c.modoSinMedidores ? '· activo' : '· apagado'}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{c.modoSinMedidores ? 'Todos los predios pagan el valor fijo de su estrato, tengan o no medidor. Úsalo mientras la empresa no tenga medidores instalados.' : 'Los predios con medidor instalado se cobran por consumo (m³); los que no tienen, el valor fijo.'}</p>
+              </div>
+              <Interruptor activo={c.modoSinMedidores} onChange={(v) => set('modoSinMedidores', v)} />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {num('cobroFijoEstrato1', 'Estrato 1', '$/mes', 'Valor fijo mensual.')}
+              {num('cobroFijoEstrato2', 'Estrato 2', '$/mes', 'Valor fijo mensual.')}
+              {num('cobroFijoEstrato3', 'Estrato 3', '$/mes', 'También para estratos 4 a 6.')}
+            </div>
+          </section>
+
+          <SectoresBarrios />
         </div>
 
         <aside className="space-y-4 xl:sticky xl:top-4">
@@ -99,7 +120,7 @@ export default function Configuracion() {
             <p>Meta de pérdidas: <b className="text-dark">{pct(actual.metaIanc)}</b></p>
             <button onClick={() => setC(CONFIG_INICIAL)} className="text-xs text-gray-400 hover:text-dark pt-2">Volver a los valores de fábrica</button>
           </section>
-          <p className="text-[11px] text-gray-400 px-1">Por ahora se guarda en este computador. Cuando exista el servidor, la configuración será la misma para todos.</p>
+          <p className="text-[11px] text-gray-400 px-1">Con el servidor encendido, la configuración se guarda en la base de datos y es la misma para todos los computadores.</p>
         </aside>
       </div>
     </div>

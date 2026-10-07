@@ -1,8 +1,7 @@
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import Logo from '../Logo'
 import Icon from '../ui/Icon'
-import { getUsername, logout, puede, cuentaActual } from '../../utils/session'
-import { rolDe } from '../../data/cuentas'
+import { getUsername, logout, puede, cuentaActual, rolActual, tokenApi } from '../../utils/session'
 
 type SidebarProps = { isOpen: boolean; onClose: () => void }
 
@@ -54,9 +53,7 @@ const GRUPOS: { titulo: string; items: Item[] }[] = [
 
 export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   const location = useLocation()
-  const navigate = useNavigate()
   const username = cuentaActual()?.nombre ?? getUsername()
-  const cuenta = cuentaActual()
 
   return (
     <>
@@ -89,11 +86,11 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
             <div className="h-9 w-9 rounded-xl bg-white border border-gray-100 shadow-sm flex items-center justify-center text-sm font-bold text-dark">{username.charAt(0).toUpperCase()}</div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-dark truncate leading-none">{username}</p>
-              <p className="text-xs text-gray-500 truncate">{rolDe(cuenta)?.nombre ?? 'Funcionario'}</p>
+              <p className="text-xs text-gray-500 truncate">{rolActual()?.nombre ?? 'Funcionario'}</p>
             </div>
-            <span className="h-2 w-2 bg-green-500 rounded-full animate-pulse" />
+            <span title={tokenApi() ? 'Conectado a la base de datos' : 'Modo demostración (datos del navegador)'} className={`h-2 w-2 rounded-full ${tokenApi() ? 'bg-green-500 animate-pulse' : 'bg-amber-400'}`} />
           </div>
-          <button onClick={() => { logout(); navigate('/login') }} className="mt-3 w-full flex items-center justify-center gap-2 h-9 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 text-sm font-medium text-gray-600 transition-colors">
+          <button onClick={() => { logout(); window.location.assign('/login') }} className="mt-3 w-full flex items-center justify-center gap-2 h-9 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 text-sm font-medium text-gray-600 transition-colors">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.6} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
             Cerrar sesión
           </button>

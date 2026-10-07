@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { usePagina } from '../hooks'
 import { useData } from '../data/DataContext'
 import { CHART, MESES } from '../data/constants'
-import { valorPeriodo } from '../data/tarifa'
+import { detalleFactura } from '../data/tarifa'
 import { clavePeriodo, generacionPeriodo, leerPeriodo, nombrePeriodo, periodosFacturados } from '../data/billing'
 import type { Factura } from '../data/types'
 import Modal from '../components/ui/Modal'
@@ -63,7 +63,7 @@ export default function Facturacion() {
       `EMCAGUA-Facturas-${etiqueta.replace(/\s/g, '-')}`,
       'EMCAGUA APC — Facturación',
       `${etiqueta} · ${filtradas.length} facturas · total ${cop(filtradas.reduce((s, f) => s + f.monto, 0))} · generado ${new Date().toLocaleString('es-CO')}`,
-      ['Factura', 'Cliente', 'ID', 'Barrio', 'Estrato', 'Periodo', 'Consumo (m³)', 'Monto', 'Vencimiento', 'Estado'],
+      ['Factura', 'Cliente', 'ID', 'Ubicación', 'Estrato', 'Periodo', 'Consumo (m³)', 'Monto', 'Vencimiento', 'Estado'],
       filtradas.map((f) => [f.id, f.cliente, f.clienteId, f.barrio, `E${f.estrato}`, f.periodo, f.consumo, f.monto, fechaCorta(f.vencimiento), f.vencida ? 'Vencida' : f.estado]),
       [6, 7],
     )
@@ -231,9 +231,9 @@ function DetalleFactura({ factura: f, onClose }: { factura: Factura; onClose: ()
         </div>
 
         <div className="mt-4 rounded-xl border border-gray-100 divide-y divide-gray-100 text-sm">
-          <div className="flex justify-between px-4 py-2.5"><span className="text-gray-500">Consumo del periodo</span><span className="font-semibold tabular-nums">{f.consumo} m³ · {(f.consumo * 1000).toLocaleString('es-CO')} L</span></div>
+          <div className="flex justify-between px-4 py-2.5"><span className="text-gray-500">Consumo del periodo</span><span className="font-semibold tabular-nums">{f.fija ? 'Sin medidor (cobro fijo)' : `${f.consumo} m³ · ${(f.consumo * 1000).toLocaleString('es-CO')} L`}</span></div>
           {anterior && <div className="flex justify-between px-4 py-2.5"><span className="text-gray-500">Consumo periodo anterior</span><span className="tabular-nums text-gray-600">{anterior.consumo} m³</span></div>}
-          {valorPeriodo(f.consumo, f.estrato, f.mes, f.anio).lineas.filter((l) => l.tipo !== 'total').map((l) => (
+          {detalleFactura(f).lineas.filter((l) => l.tipo !== 'total').map((l) => (
             <div key={l.concepto} className="flex justify-between px-4 py-2"><span className={l.tipo === 'subsidio' ? 'text-green-700' : 'text-gray-500'}>{l.concepto}{l.cantidad && <span className="text-gray-400"> · {l.cantidad}</span>}</span><span className={`tabular-nums ${l.tipo === 'subsidio' ? 'text-green-700 font-semibold' : 'text-gray-600'}`}>{cop(l.valor)}</span></div>
           ))}
           <div className="flex justify-between px-4 py-3 bg-dark text-white rounded-b-xl"><span className="font-semibold">Total a pagar</span><span className="text-lg font-extrabold tabular-nums">{cop(f.monto)} <span className="text-xs font-normal text-white/60">COP</span></span></div>

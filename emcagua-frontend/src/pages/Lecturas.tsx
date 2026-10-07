@@ -1,6 +1,9 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { useData } from '../data/DataContext'
-import { BARRIOS, CHART } from '../data/constants'
+import { CHART } from '../data/constants'
+import { medido, useConfig } from '../data/config'
+import { AvisoSinMedidores } from '../components/ModoSinMedidores'
+import { sectores, ubicacion, useZonas } from '../data/zonas'
 import { lecturaMedidor, nombrePeriodo, resumenUsuario } from '../data/billing'
 import { revisarLectura } from '../data/lecturas'
 import { ALARMAS, alarmasDe, enLinea, type AlarmaMedidor, type Telemetria } from '../data/telemetria'
@@ -36,6 +39,7 @@ function hace(ts: number, ahora: number) {
 }
 
 export default function Lecturas() {
+  useZonas() // la lista de sectores se actualiza si cambia en Configuración
   const { usuarios, lecturas, periodoLectura, cierrePeriodo, medidores, alarmas, sincronizar, registrarLectura, borrarLectura } = useData()
   const toast = useToast()
   const [filtro, setFiltro] = useState<Filtro>('todos')
@@ -44,7 +48,8 @@ export default function Lecturas() {
   const [abierto, setAbierto] = useState<string | null>(null)
   const [ahora, setAhora] = useState(() => Date.now())
 
-  const red = useMemo(() => usuarios.filter((u) => u.estado === 'Activo').sort((a, b) => a.barrio.localeCompare(b.barrio) || a.nombre.localeCompare(b.nombre)), [usuarios])
+  const conf = useConfig()
+  const red = useMemo(() => usuarios.filter((u) => u.estado === 'Activo' && medido(u, conf)).sort((a, b) => a.sector.localeCompare(b.sector) || a.nombre.localeCompare(b.nombre)), [usuarios, conf])
   const cortados = usuarios.length - red.length
   const online = red.filter((u) => enLinea(medidores[u.id], ahora))
   const caidos = red.filter((u) => !enLinea(medidores[u.id], ahora))
@@ -57,7 +62,7 @@ export default function Lecturas() {
   const enLineaPct = red.length ? online.length / red.length : 0
 
   const visibles = red.filter((u) => {
-    if (barrio !== 'Todos' && u.barrio !== barrio) return false
+    if (barrio !== 'Todos' && u.sector !== barrio) return false
     if (q && !`${u.nombre} ${u.medidor} ${u.id}`.toLowerCase().includes(q.toLowerCase())) return false
     if (filtro === 'alarma') return conAlarma.has(u.id)
     if (filtro === 'caidos') return !enLinea(medidores[u.id], ahora)
@@ -65,8 +70,8 @@ export default function Lecturas() {
     return true
   })
 
-  const sync = () => {
-    const n = sincronizar()
+  const sync = async () => {
+    const n = await sincronizar()
     setAhora(Date.now())
     toast('Medidores sincronizados', n ? `${n} lectura(s) nueva(s) recibida(s)` : `${online.length} medidores al día · ${caidos.length} sin comunicación`)
   }
@@ -82,6 +87,8 @@ export default function Lecturas() {
         </div>
         <button onClick={sync} className="btn-secondary shrink-0"><Ico d={D.sync} /> Sincronizar</button>
       </div>
+
+      <AvisoSinMedidores />
 
       <CierreMensual cierre={cierrePeriodo} periodo={nombrePeriodo(periodoLectura.mes, periodoLectura.anio)} ahora={ahora} conLectura={remotas + manuales.length} porPromedio={sinLectura.length} suspendidos={cortados} />
 
@@ -127,8 +134,8 @@ export default function Lecturas() {
           ))}
         </div>
         <select value={barrio} onChange={(e) => setBarrio(e.target.value)} className="field h-11 lg:w-48">
-          <option>Todos</option>
-          {BARRIOS.map((b) => <option key={b}>{b}</option>)}
+          <option value="Todos">Todos los sectores</option>
+          {sectores().map((b) => <option key={b}>{b}</option>)}
         </select>
         <div className="relative flex-1">
           <Ico d={D.search} className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -141,7 +148,7 @@ export default function Lecturas() {
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-soft/60 border-b border-gray-100">
-              <tr><th className="th">Medidor</th><th className="th">Barrio</th><th className="th text-right">Lectura</th><th className="th text-right">Consumo</th><th className="th">Comunicación</th><th className="th">Estado</th></tr>
+              <tr><th className="th">Medidor</th><th className="th">Ubicación</th><th className="th text-right">Lectura</th><th className="th text-right">Consumo</th><th className="th">Comunicación</th><th className="th">Estado</th></tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {visibles.map((u) => {
@@ -160,7 +167,7 @@ export default function Lecturas() {
                         </div>
                       </div>
                     </td>
-                    <td className="td text-gray-600">{u.barrio}</td>
+                    <td className="td text-gray-600">{ubicacion(u)}</td>
                     <td className="td text-right">
                       {l ? <><p className="font-mono font-semibold tabular-nums">{num(l.valor)}</p><p className="text-[11px] text-gray-400">{l.origen === 'manual' ? 'en sitio' : 'automática'}</p></> : <span className="text-xs text-gray-400 italic">sin lectura</span>}
                     </td>
@@ -261,7 +268,7 @@ function TarjetaAlarma({ a, onVer }: { a: AlarmaMedidor; onVer: () => void }) {
         <span className={g ? 'badge-bad' : 'badge-warn'}>{ALARMAS[a.tipo].label}</span>
         <span className="text-[11px] text-gray-400 font-mono">{a.usuario.medidor}</span>
       </div>
-      <p className="font-semibold text-dark mt-2 truncate">{a.usuario.nombre} <span className="font-normal text-gray-400">· {a.usuario.barrio}</span></p>
+      <p className="font-semibold text-dark mt-2 truncate">{a.usuario.nombre} <span className="font-normal text-gray-400">· {ubicacion(a.usuario)}</span></p>
       <p className="text-xs text-gray-600 mt-0.5">{a.detalle}</p>
     </button>
   )
@@ -280,7 +287,7 @@ function DetalleMedidor({ u, t, lectura, ahora, onClose, onGuardar, onQuitar }: 
         <div className="flex-1 min-w-0">
           <p className="text-xs text-gray-400 font-mono">{u.medidor} · {u.id}</p>
           <h2 className="text-lg font-bold text-dark truncate">{u.nombre}</h2>
-          <p className="text-xs text-gray-500">{u.barrio} · Estrato {u.estrato}</p>
+          <p className="text-xs text-gray-500">{ubicacion(u)} · Estrato {u.estrato}</p>
         </div>
         <button onClick={onClose} className="h-9 w-9 rounded-xl text-gray-400 hover:text-dark hover:bg-gray-100 flex items-center justify-center" aria-label="Cerrar">✕</button>
       </header>

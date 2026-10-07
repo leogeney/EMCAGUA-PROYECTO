@@ -4,6 +4,7 @@
  * (no se suman consumos: cambiaría los rangos y los subsidios).
  */
 import { resumenUsuario, type Resumen } from './billing'
+import { ubicacion } from './zonas'
 import type { Usuario } from './types'
 
 export type Propietario = { cedula: string; nombre: string; telefono: string; predios: Usuario[] }
@@ -37,4 +38,4 @@ export function saldoPropietario(predios: Usuario[], resumen: (u: Usuario) => Re
 }
 
 /** Nombre corto del predio para listas: "Calle 5 # 4-20 (Centro)". */
-export const etiquetaPredio = (u: Usuario) => `${u.direccion || `Predio ${u.id}`} (${u.barrio})`
+export const etiquetaPredio = (u: Usuario) => `${u.direccion || `Predio ${u.id}`} (${ubicacion(u)})`

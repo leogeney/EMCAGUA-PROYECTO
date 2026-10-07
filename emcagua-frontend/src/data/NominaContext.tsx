@@ -1,7 +1,9 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { EMPLEADOS_DEMO, NOVEDAD_VACIA, PARAMETROS_2026, novedadesDemo, type Empleado, type Novedad, type Parametros } from './nomina'
-import { getUsername } from '../utils/session'
+import { getUsername, puede } from '../utils/session'
+import { api, mensajeError, MODO_API } from './api'
+import { useToast } from '../components/ui/Toast'
 
 export type EstadoNomina = 'Borrador' | 'Aprobada' | 'Pagada'
 export type Evento = { ts: number; usuario: string; accion: string }
@@ -49,10 +51,43 @@ function semilla(): Record<string, PeriodoNomina> {
   return out
 }
 
+type DatosNomina = { parametros: Parametros | null; empleados: Empleado[]; periodos: Record<string, PeriodoNomina> }
+
 export function NominaProvider({ children }: { children: ReactNode }) {
-  const [parametros, setParametros] = useState<Parametros>(PARAMETROS_2026)
-  const [empleados, setEmpleados] = useState<Empleado[]>(EMPLEADOS_DEMO)
-  const [periodos, setPeriodos] = useState<Record<string, PeriodoNomina>>(semilla)
+  const toast = useToast()
+  const [parametros, setParametrosLocal] = useState<Parametros>(PARAMETROS_2026)
+  const [empleados, setEmpleados] = useState<Empleado[]>(MODO_API ? [] : EMPLEADOS_DEMO)
+  const [periodos, setPeriodos] = useState<Record<string, PeriodoNomina>>(() => (MODO_API ? {} : semilla()))
+
+  // Con la API: solo quien tiene el módulo de nómina la lee (los demás solo necesitan la lista vacía)
+  const recargar = useCallback(async () => {
+    if (!MODO_API) return
+    if (!puede('nomina')) {
+      // Sin el módulo de nómina solo se necesita el directorio de empleados (responsables, certificados)
+      try { setEmpleados(await api<Empleado[]>('/vista/nomina/directorio')) } catch { /* sin directorio */ }
+      return
+    }
+    try {
+      const d = await api<DatosNomina>('/vista/nomina')
+      if (d.parametros) setParametrosLocal(d.parametros)
+      setEmpleados(d.empleados)
+      setPeriodos(d.periodos)
+    } catch (e) { toast('No se pudo leer la nómina', mensajeError(e), 'warning') }
+  }, [toast])
+  useEffect(() => {
+    if (!MODO_API) return
+    const t = setTimeout(recargar, 0)
+    return () => clearTimeout(t)
+  }, [recargar])
+  const enApi = useCallback(async (titulo: string, fn: () => Promise<unknown>) => {
+    try { await fn() } catch (e) { toast(titulo, mensajeError(e), 'warning') }
+    await recargar()
+  }, [toast, recargar])
+
+  const setParametros = useCallback((p: Parametros) => {
+    setParametrosLocal(p)
+    if (MODO_API) void enApi('No se guardaron los parámetros', () => api('/vista/nomina/parametros', { metodo: 'PUT', cuerpo: p }))
+  }, [enApi])
 
   /** Periodo guardado o, si no existe, uno nuevo en borrador con los empleados activos. */
   const asegurar = (prev: Record<string, PeriodoNomina>, clave: string): PeriodoNomina => {
@@ -80,9 +115,10 @@ export function NominaProvider({ children }: { children: ReactNode }) {
           [clave]: { ...p, novedades: { ...p.novedades, [empleadoId]: n }, log: [...p.log, { ts: Date.now(), usuario: getUsername(), accion: `Novedades editadas: ${emp?.nombre ?? empleadoId}` }] },
         }
       })
+      if (MODO_API) void enApi('No se guardaron las novedades', () => api(`/vista/nomina/${clave}/novedades/${empleadoId}`, { metodo: 'PUT', cuerpo: n }))
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [empleados],
+    [empleados, enApi],
   )
 
   const cambiarEstado = useCallback(
@@ -92,9 +128,10 @@ export function NominaProvider({ children }: { children: ReactNode }) {
         const accion = detalle ?? (estado === 'Aprobada' ? 'Nómina aprobada' : estado === 'Pagada' ? 'Nómina marcada como pagada' : 'Nómina devuelta a borrador')
         return { ...prev, [clave]: { ...p, estado, log: [...p.log, { ts: Date.now(), usuario: getUsername(), accion }] } }
       })
+      if (MODO_API) void enApi('No se cambió el estado de la nómina', () => api(`/vista/nomina/${clave}/estado`, { metodo: 'POST', cuerpo: { estado, detalle } }))
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [empleados],
+    [empleados, enApi],
   )
 
   const guardarEmpleado = useCallback((e: Empleado) => {
@@ -107,11 +144,12 @@ export function NominaProvider({ children }: { children: ReactNode }) {
       if (!p || p.estado !== 'Borrador' || p.novedades[e.id] || !e.activo) return prev
       return { ...prev, [k]: { ...p, novedades: { ...p.novedades, [e.id]: { ...NOVEDAD_VACIA } } } }
     })
-  }, [])
+    if (MODO_API) void enApi('No se guardó el empleado', () => api(`/vista/nomina/empleados/${encodeURIComponent(e.id)}`, { metodo: 'PUT', cuerpo: e }))
+  }, [enApi])
 
   const value = useMemo(
     () => ({ parametros, setParametros, empleados, guardarEmpleado, periodos, obtenerPeriodo, setNovedad, cambiarEstado }),
-    [parametros, empleados, guardarEmpleado, periodos, obtenerPeriodo, setNovedad, cambiarEstado],
+    [parametros, setParametros, empleados, guardarEmpleado, periodos, obtenerPeriodo, setNovedad, cambiarEstado],
   )
   return <C.Provider value={value}>{children}</C.Provider>
 }

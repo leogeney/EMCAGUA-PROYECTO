@@ -3,6 +3,7 @@
  * del sistema; el texto se puede editar o redactar con la IA local antes de emitirlo.
  */
 import { COSTO_RECONEXION, MESES } from './constants'
+import { ubicacion } from './zonas'
 import { lecturaMedidor, nombrePeriodo, type Resumen } from './billing'
 import type { Empleado, Liquidacion } from './nomina'
 import type { Pqr, Usuario } from './types'
@@ -80,7 +81,7 @@ const sumarDias = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.g
 const iso = (d: Date) => d.toISOString().slice(0, 10)
 const firmaGerente = (d: Datos) => ({ nombre: d.gerente.nombre, cargo: 'Gerente' })
 const sr = (nombre: string) => `Señor(a)\n${nombre}`
-const predio = (u: Usuario) => `${u.direccion ? `${u.direccion}, ` : ''}barrio ${u.barrio}, ${EMPRESA.ciudad}`
+const predio = (u: Usuario) => `${u.direccion ? `${u.direccion}, ` : ''}${u.barrio ? `barrio ${u.barrio}, ` : ''}sector ${u.sector}, ${EMPRESA.ciudad}`
 const cc = (u: Usuario) => (u.cedula ? `, identificado(a) con cédula No. ${u.cedula.replace(/\B(?=(\d{3})+(?!\d))/g, '.')}` : '')
 const ultimoPeriodo = (u: Usuario) => { const p = u.historial[u.historial.length - 1]; return p ? nombrePeriodo(p.mes, p.anio) : '—' }
 const antiguedad = (desde: string, hoy: Date) => {
@@ -126,7 +127,7 @@ export const PLANTILLAS: Plantilla[] = [
         titulo: 'PAZ Y SALVO',
         asunto: `Paz y salvo general — ${d.u!.nombre}`,
         cuerpo: `La suscrita gerencia de ${EMPRESA.nombre}\n\nCERTIFICA:\n\nQue el(la) señor(a) ${d.u!.nombre.toUpperCase()}${cc(d.u!)}, propietario(a) de ${ps.length === 1 ? 'un (1) predio' : `${ps.length} predios`} con servicio de acueducto y alcantarillado, se encuentra a PAZ Y SALVO por todo concepto${ps.length > 1 ? ' en cada uno de ellos' : ''}.\n\nSe expide a solicitud del interesado, con destino a ${d.v.destino || 'quien interese'}, en ${EMPRESA.ciudad}, a los ${fechaLarga(d.hoy)}.\n\nDetalle de los predios:`,
-        tabla: { columnas: ['Suscriptor', 'Dirección', 'Estrato', 'Estado'], filas: ps.map((x) => [x.u.id, `${x.u.direccion || '—'} (${x.u.barrio})`, String(x.u.estrato), 'Paz y salvo']) },
+        tabla: { columnas: ['Suscriptor', 'Dirección', 'Estrato', 'Estado'], filas: ps.map((x) => [x.u.id, `${x.u.direccion || '—'} (${ubicacion(x.u)})`, String(x.u.estrato), 'Paz y salvo']) },
         firmas: [firmaGerente(d)],
       }
     },
@@ -318,7 +319,7 @@ export const PLANTILLAS: Plantilla[] = [
     generar: (d) => {
       const p = d.pqr!
       return {
-        destinatario: [sr(p.nombre), p.suscriptorId ? `Suscriptor No. ${p.suscriptorId}` : '', `Barrio ${p.barrio}, ${EMPRESA.ciudad}`, `Tel. ${p.telefono}`].filter(Boolean),
+        destinatario: [sr(p.nombre), p.suscriptorId ? `Suscriptor No. ${p.suscriptorId}` : '', `Sector ${p.barrio}, ${EMPRESA.ciudad}`, `Tel. ${p.telefono}`].filter(Boolean),
         asunto: `Respuesta a ${p.tipo.toLowerCase()} radicada No. ${p.radicado}`,
         saludo: 'Respetado(a) usuario(a):',
         cuerpo: `En atención a su ${p.tipo.toLowerCase()} radicada el ${fechaLarga(new Date(p.radicadaEn))}, en la que manifiesta: "${p.descripcion}", nos permitimos dar respuesta en los siguientes términos:\n\n${d.v.texto || p.respuesta || '[Respuesta de fondo a lo solicitado]'}\n\nContra esta decisión proceden los recursos de reposición ante esta empresa y, en subsidio, de apelación ante la Superintendencia de Servicios Públicos Domiciliarios, que deberán presentarse dentro de los cinco (5) días hábiles siguientes a su notificación (artículo 154 de la Ley 142 de 1994).`,
@@ -342,7 +343,7 @@ export const PLANTILLAS: Plantilla[] = [
       return {
         titulo: 'ACTA DE VISITA TÉCNICA',
         asunto: `Acta de visita — ${u.nombre}`,
-        cuerpo: `En ${EMPRESA.ciudad}, el ${fechaLarga(d.hoy)}, se realizó visita técnica al predio del(la) suscriptor(a) ${u.nombre.toUpperCase()}, No. ${u.id}, barrio ${u.barrio}, estrato ${u.estrato}.\n\nMotivo de la visita: ${d.v.motivo || '[motivo]'}.\nMedidor: ${u.medidor} · Lectura encontrada: ${num(lecturaMedidor(u))} m³ · Estado del servicio: ${u.estado}.\n\nHALLAZGOS\n\n${d.v.hallazgos || '[Lo que se encontró en el predio]'}\n\nACCIONES Y RECOMENDACIONES\n\n${d.v.acciones || '[Lo que se hizo y lo que se recomienda al usuario]'}\n\nEl usuario manifiesta conocer el contenido de la presente acta y firma en constancia.`,
+        cuerpo: `En ${EMPRESA.ciudad}, el ${fechaLarga(d.hoy)}, se realizó visita técnica al predio del(la) suscriptor(a) ${u.nombre.toUpperCase()}, No. ${u.id}, ${u.barrio ? `barrio ${u.barrio}, ` : ''}sector ${u.sector}, estrato ${u.estrato}.\n\nMotivo de la visita: ${d.v.motivo || '[motivo]'}.\nMedidor: ${u.medidor} · Lectura encontrada: ${num(lecturaMedidor(u))} m³ · Estado del servicio: ${u.estado}.\n\nHALLAZGOS\n\n${d.v.hallazgos || '[Lo que se encontró en el predio]'}\n\nACCIONES Y RECOMENDACIONES\n\n${d.v.acciones || '[Lo que se hizo y lo que se recomienda al usuario]'}\n\nEl usuario manifiesta conocer el contenido de la presente acta y firma en constancia.`,
         firmas: [{ nombre: tec.nombre, cargo: tec.cargo }, { nombre: u.nombre, cargo: 'Suscriptor(a) o quien atiende' }],
       }
     },

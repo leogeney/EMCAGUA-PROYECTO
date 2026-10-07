@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAsistente } from '../data/AsistenteContext'
+import { descargarModelo, esRapido, MODELO_RAPIDO } from '../data/asistente'
 import Conversacion, { Gotita } from '../components/asistente/Conversacion'
 import Ico from '../components/ui/Icon'
 import HistorialChats from '../components/asistente/HistorialChats'
@@ -19,6 +20,23 @@ export default function Asistente() {
   const { ia, url, modelo, setUrl, setModelo, probar, mensajes, nuevoChat, chats, activaId } = useAsistente()
   const [config, setConfig] = useState(false)
   const [verChats, setVerChats] = useState(false)
+  // Descarga del modelo rápido desde la misma pantalla (sin abrir la consola)
+  const [bajando, setBajando] = useState<{ p: number; estado: string } | null>(null)
+  const [errorBajada, setErrorBajada] = useState('')
+  const tieneRapido = !!ia?.modelos.some(esRapido)
+  const bajarRapido = async () => {
+    setErrorBajada('')
+    setBajando({ p: 0, estado: 'Empezando…' })
+    try {
+      await descargarModelo(url, MODELO_RAPIDO, (p, estado) => setBajando({ p, estado }))
+      await probar(url)
+      setModelo(MODELO_RAPIDO)
+    } catch (e) {
+      setErrorBajada(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBajando(null)
+    }
+  }
   const actual = chats.find((c) => c.id === activaId)
   const usarIA = !!(ia?.ok && modelo)
 
@@ -58,13 +76,26 @@ export default function Asistente() {
                 {ia?.modelos.map((m) => <option key={m}>{m}</option>)}
               </select>
             </div>
+            {ia?.ok && !esRapido(modelo) && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 space-y-2">
+                <p><b>{modelo || 'Este modelo'}</b> es grande para un PC sin tarjeta gráfica: puede tardar más de un minuto en responder.{tieneRapido ? ' Ya tienes uno rápido instalado: elígelo en la lista.' : ` Descarga ${MODELO_RAPIDO} (1,9 GB): responde 2 a 3 veces más rápido.`}</p>
+                {!tieneRapido && (bajando ? (
+                  <div>
+                    <div className="h-2 rounded-full bg-amber-100 overflow-hidden"><div className="h-full bg-amber-500 transition-all" style={{ width: `${Math.round(bajando.p * 100)}%` }} /></div>
+                    <p className="mt-1">{bajando.estado} · {Math.round(bajando.p * 100)} %</p>
+                  </div>
+                ) : <button onClick={bajarRapido} className="btn-sm h-8 bg-amber-500 text-white hover:bg-amber-600 border-0">Descargar {MODELO_RAPIDO}</button>)}
+                {errorBajada && <p className="text-red-700">No se pudo descargar: {errorBajada}</p>}
+              </div>
+            )}
             <p className={`text-xs ${ia?.ok ? 'text-green-700' : 'text-amber-700'}`}>{ia === null ? 'Probando conexión…' : ia.ok ? `Conectado · ${ia.modelos.length} modelo(s) instalados` : 'No se encontró Ollama en esa dirección. Gotita responde solo con las respuestas rápidas.'}</p>
             <p className="text-xs flex items-start gap-1.5 text-gray-500"><Ico d={D.lock} className="w-3.5 h-3.5 shrink-0 mt-0.5" /> Los datos no salen del computador: el modelo corre localmente.</p>
           </div>
           <div className="rounded-2xl bg-gray-soft p-4 text-sm text-gray-600 space-y-2">
             <p className="font-semibold text-dark flex items-center gap-1.5"><Ico d={D.bolt} className="w-4 h-4 text-amber-500" /> Para que responda más rápido</p>
             <ul className="list-disc pl-5 space-y-1 text-xs">
-              <li>Usa un modelo pequeño: <span className="font-mono bg-white px-1.5 py-0.5 rounded">ollama pull qwen2.5:3b</span>. Es 2 a 3 veces más rápido que el de 7b en un PC sin tarjeta gráfica.</li>
+              <li>Usa un modelo pequeño ({MODELO_RAPIDO}): es 2 a 3 veces más rápido que el de 7b en un PC sin tarjeta gráfica. Se descarga con el botón de la izquierda.</li>
+              <li>Deja el portátil conectado al cargador: con batería, Windows baja la velocidad del procesador y la IA tarda el doble.</li>
               <li>Deja Ollama abierto: Gotita mantiene el modelo cargado 30 minutos, así no lo vuelve a cargar en cada pregunta.</li>
               <li>Las preguntas frecuentes (urgencias, mora, recaudo, fugas, PQR, pérdidas, inventario) se contestan al instante sin IA.</li>
               <li>Si el PC tiene tarjeta gráfica NVIDIA, Ollama la usa sola y responde mucho más rápido.</li>

@@ -43,6 +43,14 @@ export function aplicarTarifa(t: TarifaCRA) {
   oyentes.forEach((f) => f())
 }
 
+/** Reemplaza todas las vigencias (las que vienen de la base de datos). */
+export function reemplazarVigencias(lista: TarifaCRA[]) {
+  const clave = (x: TarifaCRA) => x.desde.anio * 12 + x.desde.mes
+  vigencias = [...lista].sort((a, b) => clave(a) - clave(b))
+  version++
+  oyentes.forEach((f) => f())
+}
+
 export function quitarTarifa(t: TarifaCRA) {
   vigencias = vigencias.filter((v) => v !== t)
   version++
@@ -89,4 +97,16 @@ export function valorPeriodo(consumo: number, estrato: number, mes?: number, ani
   if (t) return detalleTarifa(t, consumo, estrato)
   const total = consumo * TARIFA[estrato]
   return { lineas: [{ concepto: `Consumo (${consumo} m³ × tarifa estrato ${estrato})`, valor: total }, { concepto: 'Total', valor: total, tipo: 'total' }], subtotal: total, subsidio: 0, total, cra: false }
+}
+
+/** Líneas de una factura ya emitida: cobro fijo (predio sin medidor) o la liquidación por consumo. */
+export function detalleFactura(f: { consumo: number; estrato: number; mes: number; anio: number; monto: number; fija?: boolean }): Detalle {
+  if (!f.fija) return valorPeriodo(f.consumo, f.estrato, f.mes, f.anio)
+  return {
+    lineas: [
+      { concepto: `Cobro fijo mensual · estrato ${f.estrato} (predio sin medidor)`, valor: f.monto },
+      { concepto: 'Total', valor: f.monto, tipo: 'total' },
+    ],
+    subtotal: f.monto, subsidio: 0, total: f.monto, cra: false,
+  }
 }

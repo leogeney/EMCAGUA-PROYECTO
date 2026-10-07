@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNomina } from '../data/NominaContext'
+import { mensajeError, MODO_API } from '../data/api'
 import { borrarRol, guardarCuenta, guardarRol, MODULOS, useCuentas, type Cuenta, type Rol } from '../data/cuentas'
 import Modal from '../components/ui/Modal'
 import Avatar from '../components/ui/Avatar'
@@ -40,19 +41,29 @@ function ListaCuentas() {
   const [editar, setEditar] = useState<Cuenta | 'nueva' | null>(null)
   const yo = getUsername('').toLowerCase()
   const gerentesActivos = cuentas.filter((c) => c.activo && roles.find((r) => r.id === c.rol)?.fijo).length
+  const [q, setQ] = useState('')
+  const norm = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  const visibles = cuentas.filter((c) => !q.trim() || norm(`${c.nombre} ${c.usuario} ${c.cargo} ${roles.find((r) => r.id === c.rol)?.nombre ?? ''}`).includes(norm(q.trim())))
 
   const alternar = (c: Cuenta) => {
     const esGerente = roles.find((r) => r.id === c.rol)?.fijo
     if (c.usuario.toLowerCase() === yo) return toast('No puedes desactivar tu propia cuenta', 'Pídeselo a otro gerente.')
     if (c.activo && esGerente && gerentesActivos <= 1) return toast('Debe quedar al menos un gerente activo', 'Asigna otro gerente antes de desactivar esta cuenta.')
     guardarCuenta({ ...c, activo: !c.activo })
-    toast(c.activo ? 'Cuenta desactivada' : 'Cuenta activada', `${c.nombre} ${c.activo ? 'ya no puede entrar' : 'puede volver a entrar'}.`)
+      .then(() => toast(c.activo ? 'Cuenta desactivada' : 'Cuenta activada', `${c.nombre} ${c.activo ? 'ya no puede entrar' : 'puede volver a entrar'}.`))
+      .catch((e) => toast('No se guardó el cambio', mensajeError(e), 'warning'))
   }
 
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <p className="text-sm text-gray-500">{cuentas.filter((c) => c.activo).length} cuenta(s) activa(s) de {cuentas.length}</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" /></svg>
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar nombre, usuario o rol" className="field h-10 pl-9 text-sm w-64" />
+          </div>
+          <p className="text-sm text-gray-500">{cuentas.filter((c) => c.activo).length} cuenta(s) activa(s) de {cuentas.length}</p>
+        </div>
         <button onClick={() => setEditar('nueva')} className="btn-primary"><Ico d={D.plus} /> Nueva cuenta</button>
       </div>
       <section className="card overflow-hidden">
@@ -60,7 +71,8 @@ function ListaCuentas() {
           <table className="w-full">
             <thead className="bg-gray-soft/60 border-b border-gray-100"><tr><th className="th">Funcionario</th><th className="th">Usuario</th><th className="th">Rol</th><th className="th">Último acceso</th><th className="th">Estado</th><th className="th" /></tr></thead>
             <tbody className="divide-y divide-gray-100">
-              {cuentas.map((c) => (
+              {visibles.length === 0 && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-gray-400">Ninguna cuenta coincide con “{q}”</td></tr>}
+              {visibles.map((c) => (
                 <tr key={c.usuario} className={c.activo ? '' : 'opacity-50'}>
                   <td className="td"><div className="flex items-center gap-3"><Avatar nombre={c.nombre} size={34} /><div><p className="font-semibold text-dark">{c.nombre}{c.usuario.toLowerCase() === yo && <span className="ml-2 badge-muted">Tú</span>}</p><p className="text-xs text-gray-400">{c.cargo}</p></div></div></td>
                   <td className="td font-mono text-sm">{c.usuario}</td>
@@ -78,7 +90,7 @@ function ListaCuentas() {
           </table>
         </div>
       </section>
-      <p className="text-xs text-gray-500 mt-3 flex gap-2"><Ico d={D.lock} className="w-4 h-4 shrink-0" />Las contraseñas no se guardan en el navegador: las asignará y validará el servidor, con cifrado, cuando exista. Por ahora (demostración) se entra solo con el usuario.</p>
+      <p className="text-xs text-gray-500 mt-3 flex gap-2"><Ico d={D.lock} className="w-4 h-4 shrink-0" />{MODO_API ? 'Las contraseñas se guardan cifradas en el servidor (BCrypt); nadie, ni el gerente, puede verlas. Para cambiar la de otra persona, edita su cuenta y escribe una nueva.' : 'Demostración: se entra solo con el usuario. Con la API encendida, las contraseñas se guardan cifradas en el servidor.'}</p>
       {editar && <FormCuenta inicial={editar === 'nueva' ? null : editar} onClose={() => setEditar(null)} />}
     </>
   )
@@ -91,7 +103,10 @@ function FormCuenta({ inicial, onClose }: { inicial: Cuenta | null; onClose: () 
   const [c, setC] = useState<Cuenta>(inicial ?? { usuario: '', nombre: '', cargo: '', rol: roles.find((r) => !r.fijo)?.id ?? roles[0].id, activo: true, creada: 0 })
   const repetido = !inicial && cuentas.some((x) => x.usuario.toLowerCase() === c.usuario.toLowerCase())
   const sinCuenta = empleados.filter((e) => e.activo && !cuentas.some((x) => x.nombre === e.nombre))
-  const valido = c.nombre.trim().length > 2 && /^[a-z0-9._]{3,20}$/.test(c.usuario) && !repetido
+  // Con la base de datos cada cuenta nueva necesita una contraseña inicial (se guarda cifrada en el servidor)
+  const [clave, setClave] = useState('')
+  const claveOk = !MODO_API ? true : inicial ? clave === '' || clave.length >= 8 : clave.length >= 8
+  const valido = c.nombre.trim().length > 2 && /^[a-z0-9._]{3,20}$/.test(c.usuario) && !repetido && claveOk
 
   const elegirEmpleado = (id: string) => {
     const e = empleados.find((x) => x.id === id)
@@ -103,7 +118,7 @@ function FormCuenta({ inicial, onClose }: { inicial: Cuenta | null; onClose: () 
 
   return (
     <Modal open onClose={onClose} title={inicial ? `Editar cuenta · ${inicial.usuario}` : 'Nueva cuenta'}
-      footer={<div className="flex justify-end gap-2"><button onClick={onClose} className="btn-secondary">Cancelar</button><button disabled={!valido} onClick={() => { guardarCuenta({ ...c, creada: c.creada || Date.now() }); toast(inicial ? 'Cuenta actualizada' : 'Cuenta creada', `${c.nombre} entra con el usuario «${c.usuario}».`); onClose() }} className="btn-primary">Guardar</button></div>}>
+      footer={<div className="flex justify-end gap-2"><button onClick={onClose} className="btn-secondary">Cancelar</button><button disabled={!valido} onClick={() => { guardarCuenta({ ...c, creada: c.creada || Date.now() }, clave).then(() => toast(inicial ? 'Cuenta actualizada' : 'Cuenta creada', `${c.nombre} entra con el usuario «${c.usuario}».`)).catch((e) => toast('No se guardó la cuenta', mensajeError(e), 'warning')); onClose() }} className="btn-primary">Guardar</button></div>}>
       <div className="p-6 space-y-4">
         {!inicial && sinCuenta.length > 0 && (
           <div>
@@ -117,6 +132,13 @@ function FormCuenta({ inicial, onClose }: { inicial: Cuenta | null; onClose: () 
           <div><label className="field-label">Cargo</label><input value={c.cargo} onChange={(e) => setC({ ...c, cargo: e.target.value })} className="field" /></div>
         </div>
         {repetido && <p className="text-xs text-red-600">Ese usuario ya existe.</p>}
+        {MODO_API && (
+          <div>
+            <label className="field-label">{inicial ? 'Nueva contraseña (déjala vacía para no cambiarla)' : 'Contraseña inicial'}</label>
+            <input type="password" value={clave} onChange={(e) => setClave(e.target.value)} autoComplete="new-password" placeholder="Mínimo 8 caracteres" className="field" />
+            {clave && clave.length < 8 && <p className="text-xs text-red-600 mt-1">Mínimo 8 caracteres.</p>}
+          </div>
+        )}
         <div>
           <label className="field-label">Rol</label>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -139,7 +161,7 @@ function Roles() {
   const { roles, cuentas } = useCuentas()
   const toast = useToast()
   const [nuevo, setNuevo] = useState(false)
-  const alternar = (r: Rol, m: string) => guardarRol({ ...r, permisos: r.permisos.includes(m) ? r.permisos.filter((x) => x !== m) : [...r.permisos, m] })
+  const alternar = (r: Rol, m: string) => { guardarRol({ ...r, permisos: r.permisos.includes(m) ? r.permisos.filter((x) => x !== m) : [...r.permisos, m] }).catch((e) => toast('No se guardó el permiso', mensajeError(e), 'warning')) }
 
   return (
     <>
@@ -157,7 +179,7 @@ function Roles() {
                   <th key={r.id} className="th text-center normal-case tracking-normal">
                     <p className="text-dark text-xs font-bold">{r.nombre}</p>
                     <p className="text-[10px] text-gray-400 font-normal">{cuentas.filter((c) => c.rol === r.id).length} cuenta(s)</p>
-                    {!r.fijo && cuentas.every((c) => c.rol !== r.id) && <button onClick={() => { borrarRol(r.id); toast('Rol eliminado', r.nombre) }} className="text-[10px] text-red-500 hover:underline font-normal">Eliminar</button>}
+                    {!r.fijo && cuentas.every((c) => c.rol !== r.id) && <button onClick={() => { borrarRol(r.id).then(() => toast('Rol eliminado', r.nombre)).catch((e) => toast('No se eliminó el rol', mensajeError(e), 'warning')) }} className="text-[10px] text-red-500 hover:underline font-normal">Eliminar</button>}
                   </th>
                 ))}
               </tr>
@@ -196,7 +218,7 @@ function NuevoRol({ onClose }: { onClose: () => void }) {
   const repetido = roles.some((r) => r.id === id)
   return (
     <Modal open onClose={onClose} size="sm" title="Nuevo rol"
-      footer={<div className="flex justify-end gap-2"><button onClick={onClose} className="btn-secondary">Cancelar</button><button disabled={nombre.trim().length < 3 || repetido} onClick={() => { guardarRol({ id, nombre: nombre.trim(), descripcion: descripcion.trim() || 'Rol personalizado.', permisos: [...(roles.find((r) => r.id === base)?.permisos ?? ['mi-dia'])] }); toast('Rol creado', 'Ajusta sus permisos en la tabla.'); onClose() }} className="btn-primary">Crear</button></div>}>
+      footer={<div className="flex justify-end gap-2"><button onClick={onClose} className="btn-secondary">Cancelar</button><button disabled={nombre.trim().length < 3 || repetido} onClick={() => { guardarRol({ id, nombre: nombre.trim(), descripcion: descripcion.trim() || 'Rol personalizado.', permisos: [...(roles.find((r) => r.id === base)?.permisos ?? ['mi-dia'])] }).then(() => toast('Rol creado', 'Ajusta sus permisos en la tabla.')).catch((e) => toast('No se creó el rol', mensajeError(e), 'warning')); onClose() }} className="btn-primary">Crear</button></div>}>
       <div className="p-6 space-y-3">
         <div><label className="field-label">Nombre del rol</label><input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Ej: Operador de planta" className="field" /></div>
         {repetido && <p className="text-xs text-red-600">Ya existe un rol con ese nombre.</p>}

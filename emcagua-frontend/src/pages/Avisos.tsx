@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useData } from '../data/DataContext'
-import { BARRIOS, COSTO_RECONEXION } from '../data/constants'
+import { COSTO_RECONEXION } from '../data/constants'
+import { ubicacion, useZonas } from '../data/zonas'
 import type { Usuario } from '../data/types'
 import type { Resumen } from '../data/billing'
 import WhatsAppIcon from '../components/WhatsAppIcon'
 import Ico from '../components/ui/Icon'
 import { cop, fechaCorta } from '../utils/format'
 import { limpiarCedula } from '../data/propietarios'
+import { api, MODO_API } from '../data/api'
 
 /** A quién le llega el mensaje: el dueño (con todas sus casas del grupo) o quien vive en el predio. */
 type Destinatario = { key: string; nombre: string; telefono: string; predios: Usuario[]; ocupante: boolean }
@@ -22,7 +24,7 @@ const D = { check: 'M5 13l4 4L19 7', search: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 
 const PLANTILLAS: Plantilla[] = [
   { id: 'recordatorio', nombre: 'Recordatorio de pago', texto: 'Hola {nombre}, te escribe EMCAGUA APC 💧\nTu factura por {deuda} vence el {vence}. Puedes pagar en la oficina o en línea: {portal}\n¡Gracias por estar al día!' },
   { id: 'mora', nombre: 'Aviso de mora', texto: 'Hola {nombre}, te escribe EMCAGUA APC.\nTienes {facturas} factura(s) vencida(s) por {deuda}. Para evitar la suspensión del servicio, ponte al día lo antes posible. Paga en línea: {portal}\nSi ya pagaste, ignora este mensaje.' },
-  { id: 'corte', nombre: 'Suspensión programada', texto: 'Hola {nombre}, EMCAGUA APC informa: el {fecha} se suspenderá el servicio de agua en el barrio {barrio} de {horario} por trabajos en la red. Te recomendamos guardar agua. Gracias por tu comprensión.' },
+  { id: 'corte', nombre: 'Suspensión programada', texto: 'Hola {nombre}, EMCAGUA APC informa: el {fecha} se suspenderá el servicio de agua en {barrio} de {horario} por trabajos en la red. Te recomendamos guardar agua. Gracias por tu comprensión.' },
   { id: 'fuga', nombre: 'Fuga detectada', texto: 'Hola {nombre}, EMCAGUA APC te informa: tu medidor ({medidor}) registra paso de agua todo el tiempo, incluso en la madrugada. Puede haber una fuga en tu casa (tanque, sanitario o tubería). Revísala para no pagar agua que no usas. Si necesitas ayuda, responde este mensaje.' },
   { id: 'reconexion', nombre: 'Servicio suspendido', texto: 'Hola {nombre}, tu servicio está suspendido por {facturas} factura(s) pendiente(s) por {deuda}. Para reconectarlo paga la deuda más la reconexión ({reconexion}). Paga en línea: {portal}' },
   { id: 'libre', nombre: 'Mensaje libre', texto: 'Hola {nombre}, EMCAGUA APC te informa: ' },
@@ -30,13 +32,15 @@ const PLANTILLAS: Plantilla[] = [
 
 export default function Avisos() {
   const { usuarios, resumen, alarmas } = useData()
+  const zonas = useZonas()
   const fugas = useMemo(() => new Set(alarmas.filter((a) => a.tipo === 'fuga').map((a) => a.usuario.id)), [alarmas])
   const segmentos: Segmento[] = [
     { id: 'por-vencer', nombre: 'Factura por vencer', filtro: (u, r) => u.estado === 'Activo' && r.deuda > 0 && !r.vencido },
     { id: 'morosos', nombre: 'En mora', filtro: (u, r) => u.estado === 'Activo' && r.vencido },
     { id: 'cortados', nombre: 'Servicio suspendido', filtro: (u) => u.estado === 'Cortado' },
     { id: 'fugas', nombre: 'Con fuga detectada', filtro: (u) => fugas.has(u.id) },
-    ...BARRIOS.map((b) => ({ id: `b-${b}`, nombre: `Barrio ${b}`, filtro: (u: Usuario) => u.barrio === b && u.estado === 'Activo' })),
+    ...zonas.map((z) => ({ id: `s-${z.nombre}`, nombre: `Sector ${z.nombre}`, filtro: (u: Usuario) => u.sector === z.nombre && u.estado === 'Activo' })),
+    ...zonas.flatMap((z) => z.barrios.map((b) => ({ id: `b-${z.nombre}-${b.nombre}`, nombre: `Barrio ${b.nombre} (${z.nombre})`, filtro: (u: Usuario) => u.sector === z.nombre && u.barrio === b.nombre && u.estado === 'Activo' }))),
     { id: 'todos', nombre: 'Todos los activos', filtro: (u) => u.estado === 'Activo' },
   ]
   const [segId, setSegId] = useState('morosos')
@@ -44,6 +48,22 @@ export default function Avisos() {
   const [texto, setTexto] = useState(PLANTILLAS[1].texto)
   const [vars, setVars] = useState({ fecha: '', horario: '8:00 a. m. a 2:00 p. m.' })
   const [enviados, setEnviados] = useState<Set<string>>(new Set())
+  // Con la API: los avisos enviados hoy (por cualquier funcionario) aparecen marcados
+  useEffect(() => {
+    if (!MODO_API) return
+    let vivo = true
+    api<{ predio: string; plantilla: string }[]>('/vista/avisos/hoy').then((lista) => {
+      if (!vivo) return
+      const k = new Set<string>()
+      for (const a of lista) {
+        k.add(`${a.plantilla}-${a.predio}`)
+        const u = usuarios.find((x) => x.id === a.predio)
+        if (u) k.add(`${a.plantilla}-${limpiarCedula(u.cedula) || u.id}`)
+      }
+      setEnviados((s) => new Set([...s, ...k]))
+    }).catch(() => { /* sin registro */ })
+    return () => { vivo = false }
+  }, [usuarios])
   const [q, setQ] = useState('')
 
   const seg = segmentos.find((s) => s.id === segId)!
@@ -68,13 +88,13 @@ export default function Avisos() {
     const rs = d.predios.map((x) => ({ x, r: resumen(x) }))
     const deuda = rs.reduce((s, y) => s + y.r.deuda, 0)
     const venc = rs.flatMap((y) => y.r.pendientes).sort((a, b) => a.vencimiento.getTime() - b.vencimiento.getTime())[0]
-    const detalle = d.predios.length > 1 ? `\n\nDetalle por predio:\n${rs.map((y) => `• ${y.x.direccion || y.x.id} (${y.x.barrio}): ${y.r.deuda ? cop(y.r.deuda) : 'al día'}`).join('\n')}` : ''
+    const detalle = d.predios.length > 1 ? `\n\nDetalle por predio:\n${rs.map((y) => `• ${y.x.direccion || y.x.id} (${ubicacion(y.x)}): ${y.r.deuda ? cop(y.r.deuda) : 'al día'}`).join('\n')}` : ''
     return texto
       .replace(/\{nombre\}/g, d.nombre.split(' ')[0])
       .replace(/\{deuda\}/g, cop(deuda))
       .replace(/\{facturas\}/g, String(rs.reduce((s, y) => s + y.r.pagosDebe, 0)))
       .replace(/\{vence\}/g, venc ? fechaCorta(venc.vencimiento) : '—')
-      .replace(/\{barrio\}/g, u.barrio)
+      .replace(/\{barrio\}/g, u.barrio ? `el barrio ${u.barrio} (sector ${u.sector})` : `el sector ${u.sector}`)
       .replace(/\{medidor\}/g, u.medidor)
       .replace(/\{reconexion\}/g, cop(COSTO_RECONEXION))
       .replace(/\{portal\}/g, portal)
@@ -155,10 +175,14 @@ export default function Avisos() {
                 <li key={d.key} className="px-5 py-3 flex items-center gap-3">
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-dark truncate">{d.nombre}{d.predios.length > 1 && <span className="ml-2 badge-muted">{d.predios.length} predios · un solo mensaje</span>}</p>
-                    <p className="text-xs text-gray-400 truncate">{d.telefono} · {d.ocupante ? `vive en el predio de ${d.predios[0].nombre}` : d.predios.map((x) => x.direccion || x.barrio).join(' · ')}{deuda > 0 ? ` · debe ${cop(deuda)}` : ''}</p>
+                    <p className="text-xs text-gray-400 truncate">{d.telefono} · {d.ocupante ? `vive en el predio de ${d.predios[0].nombre}` : d.predios.map((x) => x.direccion || ubicacion(x)).join(' · ')}{deuda > 0 ? ` · debe ${cop(deuda)}` : ''}</p>
                   </div>
                   {hecho && <span className="badge-ok"><Ico d={D.check} className="w-3 h-3" /> Enviado</span>}
-                  <a href={enlace(d)} target="_blank" rel="noreferrer" onClick={() => setEnviados((s) => new Set(s).add(k))} className={`h-9 px-3 rounded-xl text-sm font-semibold flex items-center gap-1.5 ${hecho ? 'bg-gray-300 text-white hover:bg-gray-400' : 'bg-[#25D366] text-white hover:bg-[#1ebe5a]'}`}><WhatsAppIcon className="w-4 h-4" /> {hecho ? 'Reenviar' : 'Enviar'}</a>
+                  <a href={enlace(d)} target="_blank" rel="noreferrer" onClick={() => {
+                    setEnviados((s) => new Set(s).add(k))
+                    // Queda registrado en la base de datos quién avisó, a quién y qué se le dijo
+                    if (MODO_API) void api('/vista/avisos', { metodo: 'POST', cuerpo: { predio: d.predios[0]?.id, telefono: d.telefono, plantilla: plantId, mensaje: mensaje(d) } }).catch(() => { /* el mensaje igual se abrió en WhatsApp */ })
+                  }} className={`h-9 px-3 rounded-xl text-sm font-semibold flex items-center gap-1.5 ${hecho ? 'bg-gray-300 text-white hover:bg-gray-400' : 'bg-[#25D366] text-white hover:bg-[#1ebe5a]'}`}><WhatsAppIcon className="w-4 h-4" /> {hecho ? 'Reenviar' : 'Enviar'}</a>
                 </li>
               )
             })}

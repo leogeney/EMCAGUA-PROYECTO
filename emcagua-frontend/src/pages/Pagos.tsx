@@ -78,9 +78,9 @@ export default function Pagos() {
   const pPend = Math.min(paginaPend, totPagPend)
   const pHist = Math.min(paginaHist, totPagHist)
 
-  const confirmarCobro = (datos: Parameters<typeof pagarFactura>[1]) => {
+  const confirmarCobro = async (datos: Parameters<typeof pagarFactura>[1]) => {
     if (!cobrando) return
-    const p = pagarFactura(cobrando.id, datos)
+    const p = await pagarFactura(cobrando.id, datos)
     if (p) {
       const cortado = estadoServicio.get(cobrando.clienteId) === 'Cortado'
       toast('Pago registrado', `${p.id} · ${cop(p.monto)}${p.vueltos ? ` · vueltos ${cop(p.vueltos)}` : ''}${cortado ? ' · el servicio sigue cortado: reactívalo en Usuarios' : ''}`)
@@ -89,9 +89,9 @@ export default function Pagos() {
     setCobrando(null)
   }
 
-  const confirmarTodo = (datos: Parameters<typeof pagarFacturas>[1]) => {
+  const confirmarTodo = async (datos: Parameters<typeof pagarFacturas>[1]) => {
     if (!cobrandoTodo) return
-    const p = pagarFacturas(cobrandoTodo.map((f) => f.id), datos)
+    const p = await pagarFacturas(cobrandoTodo.map((f) => f.id), datos)
     if (p) { toast('Pago registrado', `${p.id} · ${cop(p.monto)} · ${p.facturaIds.length} facturas${p.vueltos ? ` · vueltos ${cop(p.vueltos)}` : ''}`); setRecibo(p) }
     setCobrandoTodo(null)
   }
@@ -311,7 +311,7 @@ function Recibo({ pago: p, onClose }: { pago: Pago; onClose: () => void }) {
           <div className="bg-gray-soft rounded-xl p-3">
             <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Método</p>
             <p className="text-sm font-bold text-dark mt-1">{p.metodo}</p>
-            <p className="text-xs text-gray-500">Atendió: {getUsername('Cajero')}</p>
+            <p className="text-xs text-gray-500">Atendió: {p.cajero ?? getUsername('Cajero')}</p>
           </div>
         </div>
         <div className="mt-4 rounded-xl border border-gray-100 divide-y divide-gray-100 text-sm">

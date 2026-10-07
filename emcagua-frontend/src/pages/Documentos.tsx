@@ -13,10 +13,11 @@ import Ico from '../components/ui/Icon'
 import Modal from '../components/ui/Modal'
 import { useToast } from '../components/ui/Toast'
 import { cop, fecha } from '../utils/format'
-import { getUsername, puede } from '../utils/session'
+import { puede } from '../utils/session'
 import { otrosPredios } from '../data/propietarios'
-import { anularDocumento, codigoDocumento, urlVerificacion, useRegistroDocs } from '../data/verificacion'
+import { codigoDocumento, urlVerificacion, useRegistroDocs } from '../data/verificacion'
 import Qr from '../components/Qr'
+import { mensajeError } from '../data/api'
 
 const D = {
   back: 'M10 19l-7-7m0 0l7-7m-7 7h18',
@@ -160,15 +161,20 @@ function Editor({ p, onVolver }: { p: Plantilla; onVolver: () => void }) {
   const cambiarCampo = (k: string, val: string) => { setV((o) => ({ ...o, [k]: val })); setCuerpo(null); setEmitido(null) }
 
   const dirigidoA = u?.nombre ?? e?.nombre ?? pqr?.nombre ?? v.entidad ?? v.nombre ?? v.barrios ?? 'Comunidad'
-  const asegurarEmitido = () => {
+  const asegurarEmitido = async () => {
     if (emitido) return emitido
-    const doc = emitir({ plantillaId: p.id, nombre: p.nombre, dirigidoA: dirigidoA || '—', formato: p.formato, borrador: b!, sujetoId: u?.id ?? e?.id ?? pqr?.radicado }, p.prefijo)
-    setEmitido(doc)
-    toast('Documento emitido', `${doc.consecutivo} · ${p.nombre}`)
-    return doc
+    try {
+      const doc = await emitir({ plantillaId: p.id, nombre: p.nombre, dirigidoA: dirigidoA || '—', formato: p.formato, borrador: b!, sujetoId: u?.id ?? e?.id ?? pqr?.radicado }, p.prefijo)
+      setEmitido(doc)
+      toast('Documento emitido', `${doc.consecutivo} · ${p.nombre}`)
+      return doc
+    } catch (err) {
+      toast('No se emitió el documento', mensajeError(err), 'warning')
+      return null
+    }
   }
-  const imprimir = () => { asegurarEmitido(); setTimeout(() => window.print(), 60) }
-  const word = () => { const d = asegurarEmitido(); descargarWord(`${d.consecutivo} ${p.nombre}`, b!, d.consecutivo, new Date(d.ts), p.formato, verifDe(d)) }
+  const imprimir = async () => { if (await asegurarEmitido()) setTimeout(() => window.print(), 150) }
+  const word = async () => { const d = await asegurarEmitido(); if (!d) return; descargarWord(`${d.consecutivo} ${p.nombre}`, b!, d.consecutivo, new Date(d.ts), p.formato, verifDe(d)) }
   // El QR de la vista previa: el mismo que tendrá el documento al emitirse hoy
   const codigoPrevio = emitido?.codigo ?? codigoDocumento({ consecutivo, plantillaId: p.id, dirigidoA: dirigidoA || '—', ts: hoy.getTime() })
 
@@ -382,7 +388,7 @@ function Hoja({ b, consecutivo, fecha: f, formato, atenuado, verif, anulado }: {
 /* ------------------------------------------------------------------ */
 
 function Emitidos({ onNuevo }: { onNuevo: () => void }) {
-  const { emitidos } = useDocumentos()
+  const { emitidos, anular } = useDocumentos()
   const registro = useRegistroDocs()
   const toast = useToast()
   const [ver, setVer] = useState<Emitido | null>(null)
@@ -445,7 +451,7 @@ function Emitidos({ onNuevo }: { onNuevo: () => void }) {
         {ver && <div className="bg-gray-soft p-4"><Hoja b={ver.borrador} consecutivo={ver.consecutivo} fecha={new Date(ver.ts)} formato={ver.formato} verif={verifDe(ver)} anulado={!!registro[ver.consecutivo]?.anulado} /></div>}
       </Modal>
       <Modal open={!!anulando} onClose={() => setAnulando(null)} size="sm" title={`Anular ${anulando?.consecutivo ?? ''}`} subtitle="Quien escanee su QR verá que ya no es válido."
-        footer={<div className="flex justify-end gap-2"><button onClick={() => setAnulando(null)} className="btn-secondary">Cancelar</button><button disabled={motivo.trim().length < 5} onClick={() => { anularDocumento(anulando!.consecutivo, getUsername(), motivo.trim()); toast('Documento anulado', anulando!.consecutivo); setAnulando(null) }} className="btn bg-red-600 text-white hover:bg-red-700">Anular documento</button></div>}>
+        footer={<div className="flex justify-end gap-2"><button onClick={() => setAnulando(null)} className="btn-secondary">Cancelar</button><button disabled={motivo.trim().length < 5} onClick={() => { const c = anulando!.consecutivo; anular(c, motivo.trim()).then(() => toast('Documento anulado', c)).catch(() => { /* ya se avisó */ }); setAnulando(null) }} className="btn bg-red-600 text-white hover:bg-red-700">Anular documento</button></div>}>
         <div className="p-6 space-y-2">
           <label className="field-label">Motivo</label>
           <input value={motivo} onChange={(x) => setMotivo(x.target.value)} placeholder="Ej: se expidió con un error en el nombre" className="field" autoFocus />

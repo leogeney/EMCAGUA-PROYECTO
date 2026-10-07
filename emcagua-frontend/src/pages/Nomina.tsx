@@ -7,6 +7,7 @@ import Avatar from '../components/ui/Avatar'
 import Ico from '../components/ui/Icon'
 import StatTile from '../components/ui/StatTile'
 import { useToast } from '../components/ui/Toast'
+import { useCuentas } from '../data/cuentas'
 import { cop, copCompacto, fecha, hora, num } from '../utils/format'
 import { exportarXls } from '../utils/excel'
 import NominaAnalisis from './NominaAnalisis'
@@ -694,7 +695,13 @@ function TabEmpleados() {
   const { empleados, guardarEmpleado, parametros } = useNomina()
   const toast = useToast()
   const [edit, setEdit] = useState<Empleado | null>(null)
-  const nuevo = (): Empleado => ({ id: `E${String(empleados.length + 1).padStart(2, '0')}`, nombre: '', cedula: '', cargo: '', area: 'Operativa', salario: parametros.smmlv, fechaIngreso: new Date().toISOString().slice(0, 10), contrato: 'Indefinido', riesgoArl: 1, eps: '', pension: '', diasVacacionesDisfrutados: 0, activo: true })
+  const [q, setQ] = useState('')
+  const { cuentas } = useCuentas()
+  const norm = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+  // Cuentas de acceso que todavía no están registradas como empleados en la nómina
+  const sinNomina = cuentas.filter((c) => c.activo && c.usuario !== 'admin' && !empleados.some((e) => norm(e.nombre) === norm(c.nombre)))
+  const lista = empleados.filter((e) => !q.trim() || norm(`${e.nombre} ${e.cedula} ${e.cargo} ${e.area}`).includes(norm(q)))
+  const nuevo = (base?: { nombre: string; cargo: string }): Empleado => ({ id: `E${String(empleados.length + 1).padStart(2, '0')}`, nombre: base?.nombre ?? '', cedula: '', cargo: base?.cargo ?? '', area: 'Operativa', salario: parametros.smmlv, fechaIngreso: new Date().toISOString().slice(0, 10), contrato: 'Indefinido', riesgoArl: 1, eps: '', pension: '', diasVacacionesDisfrutados: 0, activo: true })
   return (
     <>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
@@ -705,8 +712,25 @@ function TabEmpleados() {
         </div>
         <button onClick={() => setEdit(nuevo())} className="btn-primary shrink-0"><Ico d={D.plus} /> Nuevo empleado</button>
       </div>
+      {sinNomina.length > 0 && (
+        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-sm font-semibold text-amber-900">Hay {sinNomina.length} cuenta(s) de acceso que no están en la nómina</p>
+          <p className="text-xs text-amber-800 mt-0.5">Las cuentas de <b>Cuentas y roles</b> solo sirven para entrar al sistema. Para pagarles, agrégalas aquí como empleados (con cédula y salario).</p>
+          <div className="flex flex-wrap gap-2 mt-2.5">
+            {sinNomina.map((c) => <button key={c.usuario} onClick={() => setEdit(nuevo({ nombre: c.nombre, cargo: c.cargo }))} className="btn-sm h-8 bg-white"><Ico d={D.plus} /> {c.nombre} <span className="text-gray-400 font-normal">({c.usuario})</span></button>)}
+          </div>
+        </div>
+      )}
+      {empleados.length > 0 && (
+        <div className="relative mb-4 max-w-md">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" /></svg>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre, cédula o cargo" className="field h-10 pl-9 text-sm" />
+        </div>
+      )}
+      {empleados.length === 0 && <div className="card p-8 text-center text-sm text-gray-500">Todavía no hay empleados en la nómina. Usa <b>Nuevo empleado</b> para agregar el primero.</div>}
+      {empleados.length > 0 && lista.length === 0 && <div className="card p-8 text-center text-sm text-gray-500">Ningún empleado coincide con “{q}”.</div>}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-        {empleados.map((e) => (
+        {lista.map((e) => (
           <div key={e.id} className={`card p-4 ${e.activo ? '' : 'opacity-60'}`}>
             <div className="flex items-start gap-3">
               <Avatar nombre={e.nombre} size={44} />

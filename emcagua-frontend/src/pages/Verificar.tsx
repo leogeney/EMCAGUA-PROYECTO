@@ -1,7 +1,9 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { ubicacion } from '../data/zonas'
+import { API_URL } from '../data/api'
 import { useSearchParams } from 'react-router-dom'
 import { useData } from '../data/DataContext'
-import { useConfig } from '../data/config'
+import { cargarConfigPublica, useConfig } from '../data/config'
 import { buscarDocumento, codigoDocumento, codigoFactura, codigoRecibo, normalizarCodigo, useRegistroDocs } from '../data/verificacion'
 import { otrosPredios } from '../data/propietarios'
 import Logo from '../components/Logo'
@@ -30,6 +32,7 @@ export default function Verificar() {
   const { pagos, facturas, usuarios, resumen } = useData()
   useRegistroDocs() // se actualiza si se anula un documento en otra pestaña
   const c = useConfig()
+  useEffect(() => { void cargarConfigPublica() }, [])
 
   const verificar = (): Resultado | null => {
     if (!consultado) return null
@@ -58,7 +61,7 @@ export default function Verificar() {
     if (!r) return noExiste
     const real = r.codigo || codigoDocumento(r)
     const u = usuarios.find((x) => x.id === r.sujetoId)
-    const filas: [string, ReactNode][] = [['Documento', r.nombre], ['A nombre de', r.dirigidoA], ...(u ? [['Cédula', ocultarCedula(u.cedula)] as [string, ReactNode], ['Suscriptor', `${u.id} · ${u.direccion}, ${u.barrio}`] as [string, ReactNode]] : []), ['Expedido', `${fecha(r.ts)} · ${hora(r.ts)}`], ['Expedido por', r.usuario]]
+    const filas: [string, ReactNode][] = [['Documento', r.nombre], ['A nombre de', r.dirigidoA], ...(u ? [['Cédula', ocultarCedula(u.cedula)] as [string, ReactNode], ['Suscriptor', `${u.id} · ${u.direccion}, ${ubicacion(u)}`] as [string, ReactNode]] : []), ['Expedido', `${fecha(r.ts)} · ${hora(r.ts)}`], ['Expedido por', r.usuario]]
     // Paz y salvo y certificados: además se muestra cómo está HOY el suscriptor
     let hoy: Resultado['hoy']
     if (u && /paz-salvo|cert-suscriptor/.test(r.plantillaId)) {
@@ -69,7 +72,29 @@ export default function Verificar() {
     if (r.anulado) return { estado: 'anulado', tipo: r.nombre, titulo: r.consecutivo, filas, anulado: { ts: r.anulado.ts, motivo: r.anulado.motivo } }
     return { estado: real === codigo ? 'ok' : 'alterado', tipo: r.nombre, titulo: r.consecutivo, filas, hoy }
   }
-  const res = verificar()
+  // Con la API encendida manda el servidor (su firma es la de los papeles que salen de la base de datos)
+  const [servidor, setServidor] = useState<{ clave: string; res: Resultado } | null>(null)
+  const clave = consultado ? `${consultado.d}|${consultado.c}` : ''
+  useEffect(() => {
+    if (!consultado) return
+    let vivo = true
+    fetch(`${API_URL}/api/verificar?d=${encodeURIComponent(consultado.d)}&c=${encodeURIComponent(consultado.c)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((r: { estado: Resultado['estado']; tipo: string; numero: string; datos: Record<string, unknown>; hoy?: string } | null) => {
+        if (!vivo || !r) return
+        const valor = (k: string, v: unknown): ReactNode => typeof v === 'number' && k === 'Valor' ? <b>{cop(v)}</b> : typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v) ? `${fecha(Date.parse(v))} · ${hora(Date.parse(v))}` : typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? fechaCorta(new Date(`${v}T12:00:00`)) : String(v ?? '—')
+        const medio: Record<string, string> = { EFECTIVO: 'Efectivo', TRANSFERENCIA: 'Transferencia', EN_LINEA: 'En línea' }
+        const filas = Object.entries(r.datos ?? {}).map(([k, v]) => [k, k === 'Medio de pago' ? medio[String(v)] ?? String(v) : valor(k, v)] as [string, ReactNode])
+        setServidor({ clave, res: { estado: r.estado, tipo: r.tipo, titulo: r.numero, filas, hoy: r.hoy ? { bien: /PAGADA|paz y salvo/i.test(r.hoy), texto: r.hoy } : undefined } })
+      })
+      .catch(() => { /* sin API: se verifica con los datos locales */ })
+    return () => { vivo = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clave])
+  const local = verificar()
+  const delServidor = servidor?.clave === clave ? servidor.res : null
+  // Si el servidor no lo conoce pero el navegador sí (documento de la demostración), se usa el local
+  const res = delServidor && !(delServidor.estado === 'no-existe' && local && local.estado !== 'no-existe') ? delServidor : local
 
   const ESTILO = {
     ok: { caja: 'bg-gradient-to-br from-green-600 to-emerald-500', icono: D.ok, titulo: 'Documento auténtico', texto: 'Fue expedido por la empresa y los datos coinciden con nuestros registros.' },

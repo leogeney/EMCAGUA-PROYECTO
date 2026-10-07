@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useData } from '../data/DataContext'
-import { BARRIOS, CHART, UMBRAL_ALTO } from '../data/constants'
-import { consumosAtipicos, distribucionConsumo, edadCartera, porBarrio, porEstrato, serieMensual } from '../data/analytics'
+import { CHART, UMBRAL_ALTO } from '../data/constants'
+import { ubicacion, useZonas } from '../data/zonas'
+import { consumosAtipicos, distribucionConsumo, edadCartera, porSector, porEstrato, serieMensual } from '../data/analytics'
 import { AreaChart, BarList, ChartCard, ColumnChart, Legend } from '../components/charts/charts'
 import StatTile from '../components/ui/StatTile'
 import { cop, copCompacto, num, pct } from '../utils/format'
@@ -11,12 +12,14 @@ const m3 = (n: number) => `${num(n)} m³`
 
 export default function Analitica() {
   const { usuarios, resumen } = useData()
+  const zonas = useZonas()
   const [barrio, setBarrio] = useState<string>('Todos')
   const [rango, setRango] = useState<6 | 12>(12)
 
-  const base = useMemo(() => (barrio === 'Todos' ? usuarios : usuarios.filter((u) => u.barrio === barrio)), [usuarios, barrio])
+  const base = useMemo(() => (barrio === 'Todos' ? usuarios : usuarios.filter((u) => u.sector === barrio)), [usuarios, barrio])
   const serie = useMemo(() => serieMensual(base, rango), [base, rango])
-  const barrios = useMemo(() => porBarrio(usuarios).sort((a, b) => b.consumoPromedio - a.consumoPromedio), [usuarios])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const barrios = useMemo(() => porSector(usuarios).sort((a, b) => b.consumoPromedio - a.consumoPromedio), [usuarios, zonas])
   const estratos = useMemo(() => porEstrato(base), [base])
   const dist = useMemo(() => distribucionConsumo(base), [base])
   const atipicos = useMemo(() => consumosAtipicos(base), [base])
@@ -37,11 +40,11 @@ export default function Analitica() {
         <div>
           <p className="text-xs font-semibold tracking-[0.14em] text-primary-700 uppercase mb-2">Analítica descriptiva</p>
           <h1 className="text-[28px] font-extrabold tracking-tight text-dark leading-none">Indicadores de gestión</h1>
-          <p className="text-sm text-gray-500 mt-2">Consumo, facturación y cartera · {base.length} suscriptores {barrio !== 'Todos' && `de ${barrio}`}</p>
+          <p className="text-sm text-gray-500 mt-2">Consumo, facturación y cartera · {base.length} suscriptores {barrio !== 'Todos' && `del sector ${barrio}`}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 min-w-0 max-w-full">
           <div className="flex p-1 bg-white border border-gray-100 rounded-xl shadow-sm max-w-full overflow-x-auto">
-            {(['Todos', ...BARRIOS] as string[]).map((b) => (
+            {['Todos', ...zonas.map((z) => z.nombre)].map((b) => (
               <button key={b} onClick={() => setBarrio(b)} className={`px-3 h-8 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${barrio === b ? 'bg-dark text-white' : 'text-gray-500 hover:text-dark'}`}>
                 {b}
               </button>
@@ -91,12 +94,12 @@ export default function Analitica() {
         </ChartCard>
 
         <ChartCard
-          title="Consumo promedio por barrio"
+          title="Consumo promedio por sector"
           subtitle={`Último periodo · tope normal ${UMBRAL_ALTO} m³`}
-          table={{ columns: ['Barrio', 'Prom. (m³)', 'Usuarios', 'En mora'], rows: barrios.map((b) => [b.barrio, num(b.consumoPromedio, 1), b.usuarios, b.morosos]) }}
+          table={{ columns: ['Sector', 'Prom. (m³)', 'Usuarios', 'En mora'], rows: barrios.map((b) => [b.sector, num(b.consumoPromedio, 1), b.usuarios, b.morosos]) }}
         >
           <BarList
-            data={barrios.map((b) => ({ label: b.barrio, value: b.consumoPromedio, hint: `${b.usuarios} usuarios`, color: barrio === 'Todos' || barrio === b.barrio ? CHART.serie1 : '#c9cec8' }))}
+            data={barrios.map((b) => ({ label: b.sector, value: b.consumoPromedio, hint: `${b.usuarios} usuarios`, color: barrio === 'Todos' || barrio === b.sector ? CHART.serie1 : '#c9cec8' }))}
             format={(n) => `${num(n, 1)} m³`}
             max={Math.max(UMBRAL_ALTO, ...barrios.map((b) => b.consumoPromedio))}
           />
@@ -178,7 +181,7 @@ export default function Analitica() {
                 <li key={a.usuario.id} className="flex items-center justify-between gap-3 px-1 py-2.5">
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-dark truncate">{a.usuario.nombre}</p>
-                    <p className="text-[11px] text-gray-400">{a.usuario.barrio} · prom. {num(a.promedio, 1)} m³</p>
+                    <p className="text-[11px] text-gray-400">{ubicacion(a.usuario)} · prom. {num(a.promedio, 1)} m³</p>
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-sm font-bold text-dark tabular-nums">{a.actual} m³</p>
@@ -199,7 +202,7 @@ export default function Analitica() {
         <div className="flex-1">
           <p className="text-sm font-bold text-dark">Lectura rápida</p>
           <p className="text-sm text-gray-600 mt-0.5 leading-relaxed">
-            {barrios[0].barrio} es el barrio con mayor consumo promedio ({num(barrios[0].consumoPromedio, 1)} m³). La cartera vencida suma {cop(cartera.slice(1).reduce((s, t) => s + t.monto, 0))}
+            {barrios[0] ? `${barrios[0].sector} es el sector con mayor consumo promedio (${num(barrios[0].consumoPromedio, 1)} m³).` : ''} La cartera vencida suma {cop(cartera.slice(1).reduce((s, t) => s + t.monto, 0))}
             {cartera[4].facturas > 0 && `, de la cual ${cop(cartera[4].monto)} supera los 90 días`}. {atipicos.length > 0 ? `${atipicos.length} usuario(s) muestran un salto de consumo que puede indicar fugas.` : 'No hay saltos de consumo relevantes.'}
           </p>
         </div>

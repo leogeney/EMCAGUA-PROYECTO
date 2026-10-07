@@ -2,7 +2,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { useSearchParams } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { useData } from '../data/DataContext'
-import { BARRIOS, CHART, COSTO_RECONEXION, MESES, TARIFA, UMBRAL_ALTO } from '../data/constants'
+import { CHART, cobroFijo, COSTO_RECONEXION, MESES, TARIFA, UMBRAL_ALTO } from '../data/constants'
+import { barriosDe, sectores, ubicacion, useZonas } from '../data/zonas'
 import { facturasDe, leerPeriodo, nombrePeriodo, periodosFacturados } from '../data/billing'
 import type { Usuario, UsuarioForm } from '../data/types'
 import WhatsAppIcon from '../components/WhatsAppIcon'
@@ -13,6 +14,9 @@ import Avatar from '../components/ui/Avatar'
 import PagoDialog from '../components/PagoDialog'
 import { ColumnChart } from '../components/charts/charts'
 import { useToast } from '../components/ui/Toast'
+import { api } from '../data/api'
+import { medido, useConfig } from '../data/config'
+import { isAdmin } from '../utils/session'
 import Paginacion from '../components/ui/Paginacion'
 import { usePagina } from '../hooks'
 import { formatCutoff, getNextCutoff } from '../utils/cutoff'
@@ -30,7 +34,7 @@ function lecturaEn(u: Usuario, periodo: string) {
 
 type Tab = 'todos' | 'aldia' | 'deuda' | 'vencidos' | 'cortados' | 'alto'
 const POR_PAGINA = 10
-const FORM_VACIO: UsuarioForm = { id: '', nombre: '', cedula: '', direccion: '', barrio: 'Centro', estrato: 1, medidor: '', telefono: '' }
+const FORM_VACIO: UsuarioForm = { id: '', nombre: '', cedula: '', direccion: '', sector: 'Centro', barrio: '', estrato: 1, medidor: '', conMedidor: false, telefono: '' }
 
 function validarTelefono(tel: string) {
   const limpio = tel.replace(/\D/g, '')
@@ -140,12 +144,14 @@ function SelectPill({ label, value, onChange, children }: { label: string; value
 /* ------------------------------------------------------------------ */
 export default function Users() {
   const { usuarios, resumen, crearUsuario, editarUsuario, cortar, reactivar } = useData()
+  const conf = useConfig()
   const periodos = useMemo(() => periodosFacturados(usuarios, 12).reverse(), [usuarios])
   const toast = useToast()
   const [params, setParams] = useSearchParams()
 
   const [tab, setTab] = useState<Tab>(params.get('filtro') === 'vencidos' ? 'vencidos' : 'todos')
   const [search, setSearch] = useState(() => params.get('q') ?? '')
+  const zonas = useZonas()
   const [barrio, setBarrio] = useState('Todos')
   const [estrato, setEstrato] = useState('Todos')
   const [periodo, setPeriodo] = useState('actual')
@@ -192,7 +198,8 @@ export default function Users() {
       const r = resumen(u)
       const qn = q.replace(/\D/g, '')
       if (q && !u.nombre.toLowerCase().includes(q) && !u.id.includes(q) && !u.medidor.toLowerCase().includes(q) && !u.direccion.toLowerCase().includes(q) && !(u.ocupante?.nombre.toLowerCase().includes(q)) && !(qn.length >= 4 && (u.telefono.replace(/\D/g, '').includes(qn) || limpiarCedula(u.cedula).includes(qn)))) return false
-      if (barrio !== 'Todos' && u.barrio !== barrio) return false
+      // Filtro de zona: un sector completo o un barrio ("Sector › Barrio")
+      if (barrio !== 'Todos' && (barrio.includes(' › ') ? `${u.sector} › ${u.barrio}` !== barrio : u.sector !== barrio)) return false
       if (estrato !== 'Todos' && String(u.estrato) !== estrato) return false
       if (tab === 'aldia' && r.pagosDebe > 0) return false
       if (tab === 'deuda' && r.pagosDebe === 0) return false
@@ -220,12 +227,12 @@ export default function Users() {
   const abrirNuevo = () => { setEditingId(null); setForm(FORM_VACIO); setFormError({}); setFormOpen(true) }
   const abrirEditar = (u: Usuario) => {
     setEditingId(u.id)
-    setForm({ id: u.id, nombre: u.nombre, cedula: u.cedula, direccion: u.direccion, ocupante: u.ocupante, barrio: u.barrio, estrato: u.estrato, medidor: u.medidor, telefono: u.telefono })
+    setForm({ id: u.id, nombre: u.nombre, cedula: u.cedula, direccion: u.direccion, ocupante: u.ocupante, sector: u.sector, barrio: u.barrio, estrato: u.estrato, medidor: u.medidor, conMedidor: u.conMedidor, telefono: u.telefono })
     setFormError({})
     setPerfilId(null)
     setFormOpen(true)
   }
-  const guardar = (e: React.FormEvent) => {
+  const guardar = async (e: React.FormEvent) => {
     e.preventDefault()
     const telErr = validarTelefono(form.telefono)
     const idErr = !editingId && !/^\d{3,10}$/.test(form.id) ? 'Solo números (3 a 10 dígitos)' : ''
@@ -234,16 +241,17 @@ export default function Users() {
     const tel = form.telefono.replace(/\D/g, '').replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3')
     const cedula = limpiarCedula(form.cedula)
     const ocupante = form.ocupante?.nombre.trim() ? { nombre: form.ocupante.nombre.trim(), telefono: form.ocupante.telefono.trim() } : undefined
-    const datos = { nombre: form.nombre, cedula, direccion: form.direccion.trim(), ocupante, barrio: form.barrio, estrato: form.estrato, medidor, telefono: tel }
+    const datos = { nombre: form.nombre, cedula, direccion: form.direccion.trim(), ocupante, sector: form.sector, barrio: form.barrio, estrato: form.estrato, medidor, conMedidor: form.conMedidor, telefono: tel }
     if (editingId) {
       const antes = usuarios.find((x) => x.id === editingId)!
-      editarUsuario(editingId, datos)
       // El nombre y el teléfono son del propietario: se actualizan en todos sus predios
       const otros = otrosPredios(usuarios, { ...antes, cedula })
-      otros.forEach((o) => editarUsuario(o.id, { nombre: form.nombre, cedula, direccion: o.direccion, ocupante: o.ocupante, barrio: o.barrio, estrato: o.estrato, medidor: o.medidor, telefono: tel }))
+      setFormOpen(false)
+      await editarUsuario(editingId, datos)
+      for (const o of otros) await editarUsuario(o.id, { nombre: form.nombre, cedula, direccion: o.direccion, ocupante: o.ocupante, sector: o.sector, barrio: o.barrio, estrato: o.estrato, medidor: o.medidor, conMedidor: o.conMedidor, telefono: tel })
       toast('Predio actualizado', otros.length ? `${form.nombre} · también en sus otros ${otros.length} predio(s)` : form.nombre)
     } else {
-      const err = crearUsuario({ id: form.id, ...datos })
+      const err = await crearUsuario({ id: form.id, ...datos })
       if (err) return setFormError({ id: err })
       toast('Predio creado', `${form.nombre} · ${medidor}${mismoDueno.length ? ` · ahora tiene ${mismoDueno.length + 1} predios` : ''}`)
     }
@@ -266,8 +274,8 @@ export default function Users() {
       `EMCAGUA-Usuarios-${new Date().toISOString().slice(0, 10)}`,
       'EMCAGUA APC — Usuarios',
       `${filtered.length} usuarios · consumo ${etiquetaPeriodo} · generado ${new Date().toLocaleString('es-CO')}`,
-      ['Código', 'Propietario', 'Cédula', 'Dirección', 'Medidor', 'Teléfono', 'Barrio', 'Estrato', 'Consumo (m³)', 'Saldo', 'Facturas pendientes', 'Servicio', 'Vive en el predio'],
-      filtered.map((u) => { const r = resumen(u); return [u.id, u.nombre, u.cedula, u.direccion, u.medidor, u.telefono, u.barrio, u.estrato, periodoDe(u)?.consumo ?? 0, r.deuda, r.pagosDebe, u.estado, u.ocupante?.nombre ?? ''] }),
+      ['Código', 'Propietario', 'Cédula', 'Dirección', 'Medidor', 'Teléfono', 'Sector', 'Barrio', 'Estrato', 'Consumo (m³)', 'Saldo', 'Facturas pendientes', 'Servicio', 'Vive en el predio'],
+      filtered.map((u) => { const r = resumen(u); return [u.id, u.nombre, u.cedula, u.direccion, u.medidor, u.telefono, u.sector, u.barrio, u.estrato, periodoDe(u)?.consumo ?? 0, r.deuda, r.pagosDebe, u.estado, u.ocupante?.nombre ?? ''] }),
       [8, 9, 10],
     )
 
@@ -342,8 +350,9 @@ export default function Users() {
             {search && <button onClick={() => setSearch('')} aria-label="Borrar búsqueda" className="absolute right-2.5 top-1/2 -translate-y-1/2 h-6 w-6 rounded-md text-gray-400 hover:text-dark hover:bg-gray-100 flex items-center justify-center"><Ico d={I.x} className="w-3.5 h-3.5" /></button>}
           </div>
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
-            <SelectPill label="Barrio" value={barrio} onChange={setBarrio}>
-              {['Todos', ...BARRIOS].map((b) => <option key={b}>{b}</option>)}
+            <SelectPill label="Zona" value={barrio} onChange={setBarrio}>
+              <option value="Todos">Todas</option>
+              {zonas.map((z) => [<option key={z.nombre} value={z.nombre}>{z.nombre}</option>, ...z.barrios.map((b) => <option key={`${z.nombre}-${b.nombre}`} value={`${z.nombre} › ${b.nombre}`}>{'\u00a0\u00a0'}{b.nombre}</option>)])}
             </SelectPill>
             <SelectPill label="Estrato" value={estrato} onChange={setEstrato}>
               {['Todos', '1', '2', '3'].map((e) => <option key={e} value={e}>{e}</option>)}
@@ -410,13 +419,15 @@ export default function Users() {
 
                   {/* Ubicación */}
                   <div className="hidden md:block min-w-0">
-                    <p className="text-sm text-dark truncate">{u.barrio}</p>
+                    <p className="text-sm text-dark truncate">{u.barrio || u.sector}</p>{u.barrio && <p className="text-[11px] text-gray-400 truncate">{u.sector}</p>}
                     <p className="text-xs text-gray-400">Estrato {u.estrato}</p>
                   </div>
 
                   {/* Consumo */}
                   <div className="col-span-2 md:col-span-1 flex items-center gap-3 min-w-0 pl-[52px] md:pl-0">
-                    {per?.estado === 'Suspendido' || u.historial.length === 0 ? (
+                    {!medido(u, conf) && per?.estado !== 'Suspendido' ? (
+                      <div><p className="text-sm font-bold text-dark tabular-nums">{cop(cobroFijo(u.estrato))}</p><p className="text-xs text-gray-400">Fijo · {u.conMedidor ? 'modo sin medidores' : 'sin medidor'}</p></div>
+                    ) : per?.estado === 'Suspendido' || u.historial.length === 0 ? (
                       <span className="text-xs text-gray-400 italic">{u.historial.length === 0 ? 'Sin lecturas aún' : 'Servicio suspendido'}</span>
                     ) : (
                       <>
@@ -469,7 +480,7 @@ export default function Users() {
             <Avatar nombre={form.nombre || '?'} size={48} />
             <div className="min-w-0">
               <p className="text-sm font-bold text-dark truncate">{form.nombre || 'Nombre del propietario'}</p>
-              <p className="text-xs text-gray-500">{form.barrio} · Estrato {form.estrato} · {cop(TARIFA[form.estrato])}/m³</p>
+              <p className="text-xs text-gray-500">{ubicacion(form)} · Estrato {form.estrato} · {medido(form, conf) ? `${cop(TARIFA[form.estrato])}/m³` : `${cop(cobroFijo(form.estrato))}/mes fijo`}</p>
             </div>
           </div>
           <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400 -mb-1">Propietario</p>
@@ -525,12 +536,18 @@ export default function Users() {
             <input id="f-dir" required value={form.direccion} onChange={(e) => setForm({ ...form, direccion: e.target.value })} placeholder="Ej: Calle 5 # 4-20" className="field" />
           </div>
           <div>
-            <p className="field-label">Barrio</p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {BARRIOS.map((b) => (
-                <button type="button" key={b} onClick={() => setForm({ ...form, barrio: b })} className={`h-10 rounded-xl border text-sm font-medium transition-colors ${form.barrio === b ? 'border-secondary bg-secondary/5 text-secondary' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>{b}</button>
+            <p className="field-label">Sector</p>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              {sectores().map((b) => (
+                <button type="button" key={b} onClick={() => setForm({ ...form, sector: b, barrio: form.sector === b ? form.barrio : '' })} className={`h-10 px-2 rounded-xl border text-sm font-medium transition-colors ${form.sector === b ? 'border-secondary bg-secondary/5 text-secondary' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>{b}</button>
               ))}
             </div>
+            <label className="field-label mt-3" htmlFor="f-barrio">Barrio</label>
+            <select id="f-barrio" value={form.barrio} onChange={(e) => setForm({ ...form, barrio: e.target.value })} className="field">
+              <option value="">{barriosDe(form.sector).length ? '— Sin definir —' : 'Este sector aún no tiene barrios'}</option>
+              {barriosDe(form.sector).map((b) => <option key={b}>{b}</option>)}
+            </select>
+            {!barriosDe(form.sector).length && <p className="text-[11px] text-gray-400 mt-1">Los barrios se agregan en Configuración → Sectores y barrios.</p>}
           </div>
           <div>
             <p className="field-label">Estrato</p>
@@ -543,14 +560,21 @@ export default function Users() {
               ))}
             </div>
           </div>
-          <div>
+          <div className="rounded-xl border border-gray-100 p-3">
+            <label className="flex items-center gap-2 text-sm font-medium text-dark cursor-pointer">
+              <input type="checkbox" checked={form.conMedidor} onChange={(e) => setForm({ ...form, conMedidor: e.target.checked })} className="accent-secondary h-4 w-4" />
+              Tiene medidor instalado
+            </label>
+            <p className="text-[11px] text-gray-500 mt-1 ml-6">{conf.modoSinMedidores ? `Modo sin medidores activo: por ahora se cobra el valor fijo de su estrato, ${cop(cobroFijo(form.estrato))} al mes, aunque tenga medidor.` : form.conMedidor ? 'Se cobra por consumo (m³) con la tarifa CRA.' : `Sin medidor: se cobra el valor fijo de su estrato, ${cop(cobroFijo(form.estrato))} al mes (se cambia en Configuración).`}</p>
+          </div>
+          {form.conMedidor && <div>
             <label className="field-label" htmlFor="f-med">Medidor</label>
             <div className="flex">
               <span className="inline-flex items-center px-3 rounded-l-xl border border-r-0 border-gray-200 bg-gray-soft text-sm font-mono font-bold text-gray-500">MED-</span>
               <input id="f-med" value={form.medidor.replace(/^MED-/, '')} onChange={(e) => setForm({ ...form, medidor: `MED-${e.target.value.replace(/\D/g, '')}` })} placeholder={form.id || '10300'} className="field rounded-l-none" />
             </div>
             <p className="text-[11px] text-gray-400 mt-1">Por defecto usa el mismo número del código</p>
-          </div>
+          </div>}
           <div className="rounded-xl border border-gray-100 p-3">
             <label className="flex items-center gap-2 text-sm font-medium text-dark cursor-pointer">
               <input type="checkbox" checked={!!form.ocupante} onChange={(e) => setForm({ ...form, ocupante: e.target.checked ? { nombre: '', telefono: '' } : undefined })} className="accent-secondary h-4 w-4" />
@@ -612,9 +636,9 @@ export default function Users() {
           cliente={`${reactivando.nombre} · ${reactivando.medidor}`}
           lineas={[...(rReact?.pendientes.map((f) => ({ label: `Factura ${f.periodo}`, sub: f.id, monto: f.monto })) ?? []), { label: 'Reconexión del servicio', monto: COSTO_RECONEXION }]}
           confirmLabel="Pagar y reactivar"
-          onConfirm={(datos) => {
-            const p = reactivar(reactivando.id, datos)
-            toast('Servicio reactivado', `${p.id} · ${cop(p.monto)}${p.vueltos ? ` · vueltos ${cop(p.vueltos)}` : ''}`)
+          onConfirm={async (datos) => {
+            const p = await reactivar(reactivando.id, datos)
+            if (p) toast('Servicio reactivado', `${p.id} · ${cop(p.monto)}${p.vueltos ? ` · vueltos ${cop(p.vueltos)}` : ''}`)
             setReactivando(null)
           }}
         />
@@ -660,7 +684,23 @@ function Acciones({ u, r, paraCorte, onEditar, onCortar, onReactivar }: { u: Usu
 }
 
 function Perfil({ usuario: u, onClose, onEditar, onCortar, onReactivar, onAbrir }: { usuario: Usuario; onClose: () => void; onEditar: () => void; onCortar: () => void; onReactivar: () => void; onAbrir: (id: string) => void }) {
-  const { resumen, usuarios } = useData()
+  const { resumen, usuarios, modoApi, recargar } = useData()
+  const conf = useConfig()
+  const toast = useToast()
+  const [simulando, setSimulando] = useState(false)
+  // Pruebas (solo gerente, predio sin facturas): 6 meses de consumo simulado en la base de datos
+  const simular = async () => {
+    setSimulando(true)
+    try {
+      const r = await api<{ consumos: number[]; mesEnCurso: number }>(`/vista/simular/${u.id}`, { metodo: 'POST' })
+      await recargar()
+      toast('Consumo simulado', `6 meses: ${r.consumos.join(', ')} m³ · este mes lleva ${r.mesEnCurso} m³`)
+    } catch (e) {
+      toast('No se pudo simular', e instanceof Error ? e.message : String(e), 'warning')
+    } finally {
+      setSimulando(false)
+    }
+  }
   const otros = otrosPredios(usuarios, u)
   const total = saldoPropietario([u, ...otros], resumen)
   const r = resumen(u)
@@ -700,9 +740,16 @@ function Perfil({ usuario: u, onClose, onEditar, onCortar, onReactivar, onAbrir 
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+        {modoApi && isAdmin() && u.historial.length === 0 && (
+          <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+            <p className="font-semibold">Este predio todavía no tiene consumos</p>
+            <p className="text-xs mt-0.5">Para probar el sistema puedes darle 6 meses de consumo simulado (lecturas, facturas pagadas y la lectura de este mes).</p>
+            <button disabled={simulando} onClick={simular} className="btn-sm h-8 mt-2 bg-amber-500 text-white hover:bg-amber-600 border-0">{simulando ? 'Simulando…' : 'Simular consumo (pruebas)'}</button>
+          </div>
+        )}
         {/* Indicadores */}
         <div className="grid grid-cols-3 gap-3">
-          <Kpi label="Consumo actual" value={r.ultimaLectura?.estado === 'Suspendido' ? 'Suspendido' : `${r.consumoActual} m³`} tone={r.consumoActual > UMBRAL_ALTO ? 'text-red-600' : 'text-dark'} />
+          <Kpi label="Consumo actual" value={r.ultimaLectura?.estado === 'Suspendido' ? 'Suspendido' : !medido(u, conf) ? (u.conMedidor ? 'Cobro fijo' : 'Sin medidor') : `${r.consumoActual} m³`} tone={r.consumoActual > UMBRAL_ALTO ? 'text-red-600' : 'text-dark'} />
           <Kpi label="Promedio 6 m" value={`${num(r.consumoPromedio, 1)} m³`} />
           <Kpi label="Saldo" value={r.deuda ? cop(r.deuda) : 'Al día'} tone={r.deuda ? (r.vencido ? 'text-red-600' : 'text-amber-700') : 'text-green-700'} />
         </div>
@@ -710,11 +757,11 @@ function Perfil({ usuario: u, onClose, onEditar, onCortar, onReactivar, onAbrir 
         {/* Datos */}
         <div className="rounded-2xl border border-gray-100 divide-y divide-gray-100">
           <Fila icon={I.id} k="Propietario" v={`${u.nombre} · C.C. ${formatoCedula(u.cedula) || '—'}`} />
-          <Fila icon={I.pin} k="Dirección" v={`${u.direccion || '—'} · ${u.barrio}`} />
+          <Fila icon={I.pin} k="Dirección" v={`${u.direccion || '—'} · ${ubicacion(u)}`} />
           {u.ocupante && <Fila icon={I.user} k="Vive ahí" v={`${u.ocupante.nombre}${u.ocupante.telefono ? ` · ${u.ocupante.telefono}` : ''}`} />}
-          <Fila icon={I.tag} k="Estrato y tarifa" v={`Estrato ${u.estrato} · ${cop(TARIFA[u.estrato])} por m³`} />
+          <Fila icon={I.tag} k="Estrato y tarifa" v={medido(u, conf) ? `Estrato ${u.estrato} · ${cop(TARIFA[u.estrato])} por m³` : `Estrato ${u.estrato} · ${cop(cobroFijo(u.estrato))} fijo al mes (${u.conMedidor ? 'modo sin medidores' : 'sin medidor'})`} />
           <Fila icon={I.phone} k="Teléfono" v={u.telefono} />
-          <Fila icon={I.gauge} k="Medidor" v={<span className="font-mono">{u.medidor}</span>} />
+          <Fila icon={I.gauge} k="Medidor" v={u.conMedidor ? <span className="font-mono">{u.medidor}{conf.modoSinMedidores ? ' · no se usa para cobrar' : ''}</span> : 'Sin instalar · cobro fijo'} />
         </div>
 
         {/* Otros predios del mismo dueño */}
@@ -778,7 +825,7 @@ function Perfil({ usuario: u, onClose, onEditar, onCortar, onReactivar, onAbrir 
                   <span className={`h-2 w-2 rounded-full shrink-0 ${f.estado === 'Pagada' ? 'bg-green-500' : f.vencida ? 'bg-red-500' : 'bg-amber-400'}`} />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-dark">{f.periodo}</p>
-                    <p className="text-[11px] text-gray-400">{f.consumo} m³ · {f.estado === 'Pagada' ? 'Pagada' : f.vencida ? `Venció ${fechaCorta(f.vencimiento)}` : `Vence ${fechaCorta(f.vencimiento)}`}</p>
+                    <p className="text-[11px] text-gray-400">{f.fija ? 'Cobro fijo' : `${f.consumo} m³`} · {f.estado === 'Pagada' ? 'Pagada' : f.vencida ? `Venció ${fechaCorta(f.vencimiento)}` : `Vence ${fechaCorta(f.vencimiento)}`}</p>
                   </div>
                   <span className={`text-sm font-semibold tabular-nums ${f.estado === 'Pagada' ? 'text-gray-500' : 'text-dark'}`}>{cop(f.monto)}</span>
                 </li>

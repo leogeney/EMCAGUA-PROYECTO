@@ -40,6 +40,8 @@ export type Usuario = {
   medidor: string
   /** true = medidor instalado (cobro por consumo); false = cobro fijo mensual por estrato */
   conMedidor: boolean
+  /** El dueño ya creó su cuenta (contraseña) en la oficina virtual */
+  cuentaPortal?: boolean
   telefono: string
   estado: EstadoServicio
   historial: Periodo[] // orden cronológico

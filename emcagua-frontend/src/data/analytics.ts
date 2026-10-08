@@ -1,6 +1,6 @@
 import { ESTRATOS, MESES_CORTOS, UMBRAL_ALTO } from './constants'
 import { sectores } from './zonas'
-import { montoPeriodo, nombrePeriodo, periodosFacturados, resumenUsuario, vencimientoPeriodo } from './billing'
+import { montoDe, nombrePeriodo, periodosFacturados, resumenUsuario, vencimientoPeriodo } from './billing'
 import type { Usuario } from './types'
 
 export type PuntoMensual = {
@@ -23,9 +23,8 @@ export function serieMensual(usuarios: Usuario[], n = 12): PuntoMensual[] {
     for (const u of usuarios) {
       const per = u.historial.find((h) => h.mes === mes && h.anio === anio)
       if (!per || per.estado === 'Suspendido') continue
-      const monto = montoPeriodo(per.consumo, u.estrato, mes, anio)
-      p.consumo += per.consumo
-      p.usuariosConsumo++
+      const monto = montoDe(u, per)
+      if (!per.fija) { p.consumo += per.consumo; p.usuariosConsumo++ }
       p.facturado += monto
       p.facturas++
       if (per.estado === 'Pagada') {
@@ -105,7 +104,7 @@ export function edadCartera(usuarios: Usuario[], hoy = new Date()) {
       if (p.estado !== 'Pendiente') continue
       const dias = Math.floor((hoy.getTime() - vencimientoPeriodo(p.mes, p.anio).getTime()) / 86_400_000)
       const t = tramos.find((t) => dias >= t.min && dias <= t.max)!
-      t.monto += montoPeriodo(p.consumo, u.estrato, p.mes, p.anio)
+      t.monto += montoDe(u, p)
       t.facturas++
     }
   }

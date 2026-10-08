@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import { ImprimirFactura } from '../components/FacturaMediaHoja'
 import { usePagina } from '../hooks'
 import { useData } from '../data/DataContext'
 import { CHART, MESES } from '../data/constants'
@@ -183,6 +184,8 @@ function DetalleFactura({ factura: f, onClose }: { factura: Factura; onClose: ()
   const u = usuarios.find((x) => x.id === f.clienteId)
   const hist = (u?.historial ?? []).filter((h) => clavePeriodo(h.mes, h.anio) <= clavePeriodo(f.mes, f.anio)).slice(-6)
   const anterior = u?.historial.find((h) => clavePeriodo(h.mes, h.anio) === clavePeriodo(f.mes, f.anio) - 1)
+  const [imprimir, setImprimir] = useState(false)
+  const listo = useCallback(() => setImprimir(false), [])
 
   return (
     <Modal
@@ -195,10 +198,11 @@ function DetalleFactura({ factura: f, onClose }: { factura: Factura; onClose: ()
       footer={
         <>
           <button onClick={onClose} className="btn-secondary flex-1">Cerrar</button>
-          <button onClick={() => window.print()} className="btn flex-1 bg-dark text-white hover:bg-black">Imprimir / PDF</button>
+          <button onClick={() => setImprimir(true)} className="btn flex-1 bg-dark text-white hover:bg-black">Imprimir / PDF (media hoja)</button>
         </>
       }
     >
+      {imprimir && <ImprimirFactura f={f} u={u} onListo={listo} />}
       <div className="print-area px-6 py-5">
         <div className="flex items-start justify-between gap-4 pb-4 border-b border-gray-100">
           <div className="flex gap-3">

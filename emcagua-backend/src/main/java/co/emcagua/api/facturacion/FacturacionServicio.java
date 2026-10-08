@@ -136,7 +136,7 @@ public class FacturacionServicio {
     }
 
     /** Promedio de los últimos 6 meses facturados con consumo (sin contar suspendidos). */
-    int promedio(Predio predio) {
+    public int promedio(Predio predio) {
         List<Factura> ult = facturas.findByPredioOrderByAnioDescMesDesc(predio).stream().filter(x -> x.getEstado() != Factura.Estado.SUSPENDIDO && x.getEstado() != Factura.Estado.ANULADA && !Boolean.TRUE.equals(x.getTarifaFija())).limit(6).toList();
         return ult.isEmpty() ? 0 : (int) Math.round(ult.stream().mapToInt(Factura::getConsumo).average().orElse(0));
     }

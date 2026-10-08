@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ImprimirMediaHoja, ReciboMediaHoja } from '../components/FacturaMediaHoja'
 import { useSearchParams } from 'react-router-dom'
 import { useData } from '../data/DataContext'
 import type { Factura, Pago } from '../data/types'
@@ -273,6 +274,8 @@ function SearchBox({ value, onChange, placeholder }: { value: string; onChange: 
 }
 
 function Recibo({ pago: p, onClose }: { pago: Pago; onClose: () => void }) {
+  const [imprimir, setImprimir] = useState(false)
+  const listo = useCallback(() => setImprimir(false), [])
   return (
     <Modal
       open
@@ -282,10 +285,11 @@ function Recibo({ pago: p, onClose }: { pago: Pago; onClose: () => void }) {
       footer={
         <>
           <button onClick={onClose} className="btn-secondary flex-1">Cerrar</button>
-          <button onClick={() => window.print()} className="btn flex-1 bg-dark text-white hover:bg-black">Imprimir / PDF</button>
+          <button onClick={() => setImprimir(true)} className="btn flex-1 bg-dark text-white hover:bg-black">Imprimir / PDF (media hoja)</button>
         </>
       }
     >
+      {imprimir && <ImprimirMediaHoja onListo={listo}><ReciboMediaHoja p={{ ...p, cajero: p.cajero ?? getUsername('Cajero') }} /></ImprimirMediaHoja>}
       <div className="print-area px-6 py-5">
         <div className="flex items-start justify-between gap-4 pb-4 border-b border-gray-100">
           <div className="flex gap-3">

@@ -3,7 +3,7 @@
  * Con la API vienen de la base de datos (Configuración → Sectores y barrios); en demostración se guardan en el navegador.
  */
 import { useSyncExternalStore } from 'react'
-import { api, MODO_API } from './api'
+import { api, API_URL, MODO_API } from './api'
 
 export type BarrioZona = { id?: number; nombre: string; predios?: number }
 export type SectorZona = { id?: number; nombre: string; predios?: number; barrios: BarrioZona[] }
@@ -64,4 +64,12 @@ export const renombrarBarrio = (sector: string, anterior: string, nombre: string
 export const borrarBarrio = (sector: string, nombre: string) => {
   const id = zonas.find((z) => z.nombre === sector)?.barrios.find((b) => b.nombre === nombre)?.id
   return cambiar(() => zonas.map((z) => (z.nombre === sector ? { ...z, barrios: z.barrios.filter((b) => b.nombre !== nombre) } : z)), `/vista/zonas/barrios/${id}`, 'DELETE')
+}
+
+/** Oficina virtual (sin sesión): sectores y barrios públicos para el formulario de registro. */
+export async function cargarZonasPublicas() {
+  try {
+    const r = await fetch(`${API_URL}/api/portal/vista/zonas`)
+    if (r.ok) fijar(((await r.json()) as { nombre: string; barrios: string[] }[]).map((z) => ({ nombre: z.nombre, barrios: z.barrios.map((nombre) => ({ nombre })) })))
+  } catch { /* sin servidor: se quedan los de la demostración */ }
 }

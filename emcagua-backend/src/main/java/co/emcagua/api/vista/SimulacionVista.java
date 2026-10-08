@@ -14,6 +14,7 @@ import java.util.Random;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -21,6 +22,7 @@ import co.emcagua.api.comun.ErrorNegocio;
 import co.emcagua.api.comun.NoEncontrado;
 import co.emcagua.api.comun.Periodo;
 import co.emcagua.api.documentos.VerificacionServicio;
+import co.emcagua.api.empresa.ConfiguracionServicio;
 import co.emcagua.api.facturacion.Factura;
 import co.emcagua.api.facturacion.FacturaRepositorio;
 import co.emcagua.api.facturacion.FacturacionServicio;
@@ -57,9 +59,11 @@ public class SimulacionVista {
     private final FacturacionServicio facturacion;
     private final TarifaServicio tarifas;
     private final VerificacionServicio verificacion;
+    private final ConfiguracionServicio config;
 
     public SimulacionVista(PredioRepositorio predios, MedidorRepositorio medidores, LecturaRepositorio lecturas, FacturaRepositorio facturas, PagoRepositorio pagos,
-                           FacturacionServicio facturacion, TarifaServicio tarifas, VerificacionServicio verificacion) {
+                           FacturacionServicio facturacion, TarifaServicio tarifas, VerificacionServicio verificacion, ConfiguracionServicio config) {
+        this.config = config;
         this.predios = predios;
         this.medidores = medidores;
         this.lecturas = lecturas;
@@ -68,6 +72,47 @@ public class SimulacionVista {
         this.facturacion = facturacion;
         this.tarifas = tarifas;
         this.verificacion = verificacion;
+    }
+
+    public record PeriodoForm(int anio, int mes) {}
+
+    @Operation(summary = "Pruebas: genera UNA factura pendiente de un periodo para un predio (si el vencimiento ya pasó, queda vencida)")
+    @PostMapping("/{codigo}/factura")
+    @Transactional
+    public Map<String, Object> factura(@PathVariable String codigo, @RequestBody PeriodoForm per) {
+        if (!Sesion.cuenta().getRol().isFijo()) throw new ErrorNegocio("Solo el gerente puede generar facturas de prueba");
+        Predio p = predios.findByCodigo(codigo).orElseThrow(() -> new NoEncontrado("No existe el predio " + codigo));
+        if (per.mes() < 1 || per.mes() > 12) throw new ErrorNegocio("Mes inválido");
+        Periodo periodo = new Periodo(per.anio(), per.mes());
+        if (facturas.findByPredioAndAnioAndMes(p, periodo.anio(), periodo.mes()).isPresent()) throw new ErrorNegocio("El predio ya tiene factura de " + periodo.nombre());
+        LocalDate hoy = LocalDate.now(FacturacionServicio.ZONA);
+        Factura f = new Factura();
+        f.setPredio(p);
+        f.setAnio(periodo.anio());
+        f.setMes(periodo.mes());
+        f.setEstrato(p.getEstrato());
+        f.setNumero("FAC-%d-%02d-%s".formatted(periodo.anio(), periodo.mes(), codigo));
+        f.setEmision(periodo.generacion().isAfter(hoy) ? hoy : periodo.generacion());
+        f.setVencimiento(periodo.vencimiento());
+        if (config.actual().sinMedidores() || !p.medido()) {
+            long valor = config.actual().cobroFijo(p.getEstrato());
+            f.setTarifaFija(true);
+            f.setConsumo(0);
+            f.setCargoFijo(valor);
+            f.setTotal(valor);
+        } else {
+            f.setConsumo(facturacion.promedio(p));
+            f.setEstimado(true);
+            var liq = tarifas.liquidar(f.getConsumo(), p.getEstrato(), periodo);
+            f.setCargoFijo(liq.cargoFijo());
+            f.setValorConsumo(liq.valorConsumo());
+            f.setSubsidio(liq.subsidio());
+            f.setTotal(liq.total());
+        }
+        f.setEstado(Factura.Estado.PENDIENTE);
+        f.setCodigoVerificacion(verificacion.codigoFactura(f.getNumero(), codigo, f.getTotal()));
+        facturas.save(f);
+        return Map.of("numero", f.getNumero(), "total", f.getTotal(), "vence", f.getVencimiento().toString(), "vencida", f.getVencimiento().isBefore(hoy), "fija", Boolean.TRUE.equals(f.getTarifaFija()));
     }
 
     private static Instant alCierre(LocalDate dia) { return dia.minusDays(1).atTime(LocalTime.of(23, 0)).atZone(FacturacionServicio.ZONA).toInstant(); }

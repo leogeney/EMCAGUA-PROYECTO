@@ -3,6 +3,9 @@ import { CONFIG_INICIAL, guardarConfig, lineaContacto, useConfig, type Config } 
 import { useToast } from '../components/ui/Toast'
 import SectoresBarrios from '../components/SectoresBarrios'
 import { Interruptor } from '../components/ModoSinMedidores'
+import Respaldos from '../components/Respaldos'
+import { isAdmin } from '../utils/session'
+import { MODO_API } from '../data/api'
 import { cop, pct } from '../utils/format'
 
 type CampoTexto = { k: keyof Config; label: string; placeholder?: string; ancho?: boolean }
@@ -95,6 +98,8 @@ export default function Configuracion() {
           </section>
 
           <SectoresBarrios />
+
+          {MODO_API && isAdmin() && <Respaldos carpetaExtra={c.carpetaRespaldoExtra} onCarpetaExtra={(v) => set('carpetaRespaldoExtra', v)} />}
         </div>
 
         <aside className="space-y-4 xl:sticky xl:top-4">

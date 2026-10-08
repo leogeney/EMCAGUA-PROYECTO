@@ -13,6 +13,9 @@ import Drawer from '../components/ui/Drawer'
 import Avatar from '../components/ui/Avatar'
 import PagoDialog from '../components/PagoDialog'
 import { ColumnChart } from '../components/charts/charts'
+import GraficaPagos from '../components/GraficaPagos'
+import { AvisoSolicitudes, SolicitudesModal } from '../components/SolicitudesRegistro'
+import { useSolicitudes } from '../data/solicitudes'
 import { useToast } from '../components/ui/Toast'
 import { api } from '../data/api'
 import { medido, useConfig } from '../data/config'
@@ -143,7 +146,8 @@ function SelectPill({ label, value, onChange, children }: { label: string; value
 /* Página                                                              */
 /* ------------------------------------------------------------------ */
 export default function Users() {
-  const { usuarios, resumen, crearUsuario, editarUsuario, cortar, reactivar } = useData()
+  const { usuarios, resumen, crearUsuario, editarUsuario, cortar, reactivar, recargar: recargarDatos } = useData()
+  const solicitudes = useSolicitudes()
   const conf = useConfig()
   const periodos = useMemo(() => periodosFacturados(usuarios, 12).reverse(), [usuarios])
   const toast = useToast()
@@ -158,6 +162,7 @@ export default function Users() {
   const [orden, setOrden] = useState('nombre')
 
   const [perfilId, setPerfilId] = useState<string | null>(null)
+  const [verSolicitudes, setVerSolicitudes] = useState(() => params.get('solicitudes') === '1')
   const [formOpen, setFormOpen] = useState(params.get('nuevo') === '1')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<UsuarioForm>(FORM_VACIO)
@@ -304,6 +309,9 @@ export default function Users() {
           <button onClick={abrirNuevo} className="btn-primary"><Ico d={I.plus} /> Nuevo predio</button>
         </div>
       </div>
+
+      <AvisoSolicitudes solicitudes={solicitudes} onAbrir={() => setVerSolicitudes(true)} />
+      {verSolicitudes && <SolicitudesModal solicitudes={solicitudes} usuarios={usuarios} onClose={() => { setVerSolicitudes(false); if (params.get('solicitudes')) { params.delete('solicitudes'); setParams(params, { replace: true }) } }} onCreado={async (codigo) => { setVerSolicitudes(false); await recargarDatos(); setPerfilId(codigo) }} />}
 
       {/* Aviso de corte */}
       {vencidos.length > 0 && tab !== 'vencidos' && (
@@ -688,6 +696,13 @@ function Perfil({ usuario: u, onClose, onEditar, onCortar, onReactivar, onAbrir 
   const conf = useConfig()
   const toast = useToast()
   const [simulando, setSimulando] = useState(false)
+  const [quitando, setQuitando] = useState(false)
+  const quitarCuentaPortal = async () => {
+    setQuitando(true)
+    try { await api(`/vista/suscriptores/${encodeURIComponent(u.id)}/cuenta-portal`, { metodo: 'DELETE' }); await recargar(); toast('Contraseña quitada', `${u.nombre} puede volver a crear su cuenta en la oficina virtual.`) }
+    catch (e) { toast('No se quitó la contraseña', e instanceof Error ? e.message : String(e), 'warning') }
+    finally { setQuitando(false) }
+  }
   // Pruebas (solo gerente, predio sin facturas): 6 meses de consumo simulado en la base de datos
   const simular = async () => {
     setSimulando(true)
@@ -749,8 +764,8 @@ function Perfil({ usuario: u, onClose, onEditar, onCortar, onReactivar, onAbrir 
         )}
         {/* Indicadores */}
         <div className="grid grid-cols-3 gap-3">
-          <Kpi label="Consumo actual" value={r.ultimaLectura?.estado === 'Suspendido' ? 'Suspendido' : !medido(u, conf) ? (u.conMedidor ? 'Cobro fijo' : 'Sin medidor') : `${r.consumoActual} m³`} tone={r.consumoActual > UMBRAL_ALTO ? 'text-red-600' : 'text-dark'} />
-          <Kpi label="Promedio 6 m" value={`${num(r.consumoPromedio, 1)} m³`} />
+          <Kpi label="Consumo actual" value={r.ultimaLectura?.estado === 'Suspendido' ? 'Suspendido' : !medido(u, conf) ? (u.conMedidor ? 'Cobro fijo' : 'Sin medidor') : `${r.consumoActual} m³`} tone={medido(u, conf) && r.consumoActual > UMBRAL_ALTO ? 'text-red-600' : 'text-dark'} />
+          <Kpi label={medido(u, conf) ? 'Promedio 6 m' : 'Cobro mensual'} value={medido(u, conf) ? `${num(r.consumoPromedio, 1)} m³` : cop(cobroFijo(u.estrato))} />
           <Kpi label="Saldo" value={r.deuda ? cop(r.deuda) : 'Al día'} tone={r.deuda ? (r.vencido ? 'text-red-600' : 'text-amber-700') : 'text-green-700'} />
         </div>
 
@@ -761,6 +776,9 @@ function Perfil({ usuario: u, onClose, onEditar, onCortar, onReactivar, onAbrir 
           {u.ocupante && <Fila icon={I.user} k="Vive ahí" v={`${u.ocupante.nombre}${u.ocupante.telefono ? ` · ${u.ocupante.telefono}` : ''}`} />}
           <Fila icon={I.tag} k="Estrato y tarifa" v={medido(u, conf) ? `Estrato ${u.estrato} · ${cop(TARIFA[u.estrato])} por m³` : `Estrato ${u.estrato} · ${cop(cobroFijo(u.estrato))} fijo al mes (${u.conMedidor ? 'modo sin medidores' : 'sin medidor'})`} />
           <Fila icon={I.phone} k="Teléfono" v={u.telefono} />
+          {modoApi && <Fila icon={I.id} k="Oficina virtual" v={u.cuentaPortal
+            ? <span className="flex items-center gap-2 flex-wrap"><span className="badge-ok">Cuenta creada</span><button disabled={quitando} onClick={quitarCuentaPortal} className="text-xs font-semibold text-red-600 hover:underline disabled:opacity-50">Quitar contraseña</button></span>
+            : <span className="text-gray-500">Sin cuenta · la crea desde la oficina virtual</span>} />}
           <Fila icon={I.gauge} k="Medidor" v={u.conMedidor ? <span className="font-mono">{u.medidor}{conf.modoSinMedidores ? ' · no se usa para cobrar' : ''}</span> : 'Sin instalar · cobro fijo'} />
         </div>
 
@@ -786,8 +804,19 @@ function Perfil({ usuario: u, onClose, onEditar, onCortar, onReactivar, onAbrir 
           </div>
         )}
 
+        {/* Sin medidor: no hay m³, se grafica lo cobrado y pagado cada mes */}
+        {!medido(u, conf) && (
+          <div>
+            <div className="flex items-baseline justify-between mb-2">
+              <h3 className="text-sm font-bold text-dark">Cobros últimos 6 meses</h3>
+              <span className="text-xs text-gray-400">{u.conMedidor ? 'modo sin medidores' : 'sin medidor'}</span>
+            </div>
+            <GraficaPagos facturas={facturasDe(u)} etiquetaCorta />
+          </div>
+        )}
+
         {/* Consumo */}
-        {hist.length > 1 && (
+        {medido(u, conf) && hist.length > 1 && (
           <div>
             <div className="flex items-baseline justify-between mb-2">
               <h3 className="text-sm font-bold text-dark">Consumo últimos {hist.length} meses</h3>

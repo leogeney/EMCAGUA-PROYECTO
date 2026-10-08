@@ -47,6 +47,8 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const motivo = new URLSearchParams(window.location.search).get('motivo')
+  const aviso = motivo === 'inactividad' ? 'Tu sesión se cerró por inactividad. Vuelve a ingresar.' : motivo === 'servidor' ? 'El servidor está encendido: ingresa con tu usuario y contraseña reales.' : motivo === 'portal' ? 'Se cerró la sesión de funcionario porque un suscriptor entró a la oficina virtual en este navegador.' : ''
   const [olvido, setOlvido] = useState(false)
   const servidor = useServidor()
 
@@ -162,6 +164,7 @@ export default function Login() {
                 </span>
               </div>
 
+              {aviso && !error && <p className="mt-5 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2.5 text-sm text-amber-800">{aviso}</p>}
               <form onSubmit={handleSubmit} className="mt-7 space-y-4" noValidate>
                 <div>
                   <label htmlFor="username" className="block text-sm font-semibold text-dark mb-1.5">Usuario</label>

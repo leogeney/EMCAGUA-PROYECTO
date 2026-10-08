@@ -45,6 +45,8 @@ import co.emcagua.api.suscriptores.Predio;
 import co.emcagua.api.suscriptores.PredioRepositorio;
 import co.emcagua.api.suscriptores.Propietario;
 import co.emcagua.api.suscriptores.PropietarioRepositorio;
+import co.emcagua.api.suscriptores.SolicitudRegistro;
+import co.emcagua.api.suscriptores.SolicitudRegistroRepositorio;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
@@ -59,6 +61,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 public class VistaControlador {
     private final PredioRepositorio predios;
     private final PropietarioRepositorio propietarios;
+    private final SolicitudRegistroRepositorio solicitudes;
     private final MedidorRepositorio medidores;
     private final LecturaRepositorio lecturas;
     private final FacturaRepositorio facturas;
@@ -71,7 +74,8 @@ public class VistaControlador {
 
     public VistaControlador(PredioRepositorio predios, PropietarioRepositorio propietarios, MedidorRepositorio medidores, LecturaRepositorio lecturas,
                             FacturaRepositorio facturas, PagoRepositorio pagos, FacturacionServicio facturacion, CajaServicio caja, AlarmaRepositorio alarmas,
-                            SectorRepositorio sectores, BarrioRepositorio barrios) {
+                            SectorRepositorio sectores, BarrioRepositorio barrios, SolicitudRegistroRepositorio solicitudes) {
+        this.solicitudes = solicitudes;
         this.alarmas = alarmas;
         this.sectores = sectores;
         this.barrios = barrios;
@@ -131,6 +135,7 @@ public class VistaControlador {
         u.put("medidor", serial.getOrDefault(p.getId(), ""));
         u.put("conMedidor", p.medido());
         u.put("telefono", telefono(p.getPropietario().getTelefono()));
+        u.put("cuentaPortal", p.getPropietario().isCuentaPortal());
         u.put("estado", p.getEstado() == Predio.Estado.CORTADO ? "Cortado" : "Activo");
         List<Map<String, Object>> historial = new ArrayList<>();
         BigDecimal base = null;
@@ -252,6 +257,94 @@ public class VistaControlador {
         p.setEstado(Predio.Estado.CORTADO);
         predios.save(p);
         return Map.of("id", p.getCodigo(), "estado", "Cortado");
+    }
+
+    @Operation(summary = "Quitar la contraseña de la oficina virtual (el suscriptor la olvidó: vuelve a crear su cuenta)")
+    @DeleteMapping("/suscriptores/{codigo}/cuenta-portal")
+    @Transactional
+    public Map<String, Object> quitarCuentaPortal(@PathVariable String codigo) {
+        exigir("usuarios");
+        Predio p = predios.findByCodigo(codigo).orElseThrow(() -> new NoEncontrado("No existe el predio " + codigo));
+        Propietario dueno = p.getPropietario();
+        dueno.setClavePortal(null);
+        dueno.setCuentaPortalCreada(null);
+        propietarios.save(dueno);
+        return Map.of("id", p.getCodigo(), "cuentaPortal", false);
+    }
+
+    /* ---------------- Solicitudes de registro (oficina virtual) ---------------- */
+
+    private static Map<String, Object> solicitud(SolicitudRegistro x) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", x.getId());
+        m.put("radicado", x.getRadicado());
+        m.put("nombre", x.getNombre());
+        m.put("cedula", x.getCedula());
+        m.put("telefono", telefono(x.getTelefono()));
+        m.put("correo", x.getCorreo() == null ? "" : x.getCorreo());
+        m.put("direccion", x.getDireccion());
+        m.put("sector", x.getSector() == null ? "" : x.getSector());
+        m.put("barrio", x.getBarrio() == null ? "" : x.getBarrio());
+        m.put("estrato", x.getEstrato());
+        m.put("conMedidor", x.isConMedidor());
+        m.put("medidor", x.getMedidor() == null ? "" : x.getMedidor());
+        m.put("observacion", x.getObservacion() == null ? "" : x.getObservacion());
+        m.put("estado", switch (x.getEstado()) { case PENDIENTE -> "Pendiente"; case APROBADA -> "Aprobada"; case RECHAZADA -> "Rechazada"; });
+        m.put("motivo", x.getMotivo() == null ? "" : x.getMotivo());
+        m.put("predio", x.getPredio() == null ? "" : x.getPredio());
+        m.put("creada", x.getCreado() == null ? 0 : x.getCreado().toEpochMilli());
+        m.put("revisadaPor", x.getRevisadaPor() == null ? "" : x.getRevisadaPor());
+        return m;
+    }
+
+    @Operation(summary = "Solicitudes de registro hechas desde la oficina virtual")
+    @GetMapping("/solicitudes")
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> solicitudes() {
+        exigir("usuarios");
+        return solicitudes.findAllByOrderByCreadoDesc().stream().limit(200).map(VistaControlador::solicitud).toList();
+    }
+
+    @Operation(summary = "Aprobar una solicitud: crea el predio con los datos revisados y deja lista la cuenta de la oficina virtual")
+    @PostMapping("/solicitudes/{id}/aprobar")
+    @Transactional
+    public Map<String, Object> aprobar(@PathVariable Long id, @RequestBody FormSuscriptor f) {
+        exigir("usuarios");
+        SolicitudRegistro x = solicitudes.findById(id).orElseThrow(() -> new NoEncontrado("No existe esa solicitud"));
+        if (x.getEstado() != SolicitudRegistro.Estado.PENDIENTE) throw new ErrorNegocio("Esa solicitud ya fue revisada");
+        Map<String, Object> r = crear(f);
+        Predio p = predios.findByCodigo(String.valueOf(r.get("id"))).orElseThrow();
+        Propietario dueno = p.getPropietario();
+        if (dueno.getClavePortal() == null) {
+            dueno.setClavePortal(x.getClave());
+            dueno.setCuentaPortalCreada(java.time.Instant.now());
+        }
+        if (dueno.getCorreo() == null && x.getCorreo() != null) dueno.setCorreo(x.getCorreo());
+        propietarios.save(dueno);
+        x.setEstado(SolicitudRegistro.Estado.APROBADA);
+        x.setPredio(p.getCodigo());
+        x.setRevisadaPor(Sesion.cuenta().getNombre());
+        x.setRevisadaEn(java.time.Instant.now());
+        solicitudes.save(x);
+        return solicitud(x);
+    }
+
+    public record Rechazo(String motivo) {}
+
+    @Operation(summary = "Rechazar una solicitud de registro")
+    @PostMapping("/solicitudes/{id}/rechazar")
+    @Transactional
+    public Map<String, Object> rechazar(@PathVariable Long id, @RequestBody Rechazo b) {
+        exigir("usuarios");
+        SolicitudRegistro x = solicitudes.findById(id).orElseThrow(() -> new NoEncontrado("No existe esa solicitud"));
+        if (x.getEstado() != SolicitudRegistro.Estado.PENDIENTE) throw new ErrorNegocio("Esa solicitud ya fue revisada");
+        if (b.motivo() == null || b.motivo().isBlank()) throw new ErrorNegocio("Escribe el motivo del rechazo (se le muestra a la persona)");
+        x.setEstado(SolicitudRegistro.Estado.RECHAZADA);
+        x.setMotivo(b.motivo().trim());
+        x.setRevisadaPor(Sesion.cuenta().getNombre());
+        x.setRevisadaEn(java.time.Instant.now());
+        solicitudes.save(x);
+        return solicitud(x);
     }
 
     /* --------------------------------- Pagos --------------------------------- */

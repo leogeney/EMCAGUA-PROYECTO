@@ -90,8 +90,8 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
             </div>
             <span title={tokenApi() ? 'Conectado a la base de datos' : 'Modo demostración (datos del navegador)'} className={`h-2 w-2 rounded-full ${tokenApi() ? 'bg-green-500 animate-pulse' : 'bg-amber-400'}`} />
           </div>
-          <button onClick={() => { logout(); window.location.assign('/login') }} className="mt-3 w-full flex items-center justify-center gap-2 h-9 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 text-sm font-medium text-gray-600 transition-colors">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.6} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+          <button onClick={() => { logout(); window.location.assign('/login') }} className="group mt-3 w-full flex items-center justify-center gap-2 h-9 rounded-xl border border-gray-100 bg-white text-sm font-medium text-gray-600 transition-colors hover:bg-red-50 hover:border-red-200 hover:text-red-600 focus-visible:bg-red-50 focus-visible:border-red-200 focus-visible:text-red-600 active:bg-red-100">
+            <svg className="w-4 h-4 transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.6} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
             Cerrar sesión
           </button>
         </div>

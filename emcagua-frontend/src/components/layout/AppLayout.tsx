@@ -5,6 +5,7 @@ import Campana from './Campana'
 import AsistenteFlotante from '../asistente/AsistenteFlotante'
 import { tokenApi } from '../../utils/session'
 import { BotonSinMedidores } from '../ModoSinMedidores'
+import GuardiaSesion from './GuardiaSesion'
 
 export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -41,6 +42,7 @@ export default function AppLayout() {
         </main>
       </div>
       <AsistenteFlotante />
+      <GuardiaSesion />
     </div>
   )
 }

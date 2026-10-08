@@ -46,6 +46,9 @@ public class Configuracion extends Entidad {
     /** Modo sin medidores: mientras la empresa no tenga medidores instalados, TODOS los predios pagan el valor fijo de su estrato. */
     @Column(columnDefinition = "boolean default true") private Boolean modoSinMedidores = true;
 
+    /** Segunda carpeta donde se copia cada respaldo (OneDrive, memoria USB...). Vacío = solo la carpeta principal. */
+    @Column(length = 300) private String carpetaRespaldoExtra = "";
+
     public boolean sinMedidores() { return !Boolean.FALSE.equals(modoSinMedidores); }
 
     /** Valor fijo del mes para un predio sin medidor. */

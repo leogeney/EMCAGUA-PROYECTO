@@ -86,7 +86,7 @@ export function periodoAFactura(u: Usuario, p: Periodo, hoy = new Date()): Factu
     anio: p.anio,
     periodo: nombrePeriodo(p.mes, p.anio),
     consumo: p.consumo,
-    monto: p.monto ?? (p.fija ? cobroFijo(u.estrato) : montoPeriodo(p.consumo, u.estrato, p.mes, p.anio)),
+    monto: montoDe(u, p),
     vencimiento: venc,
     estado,
     vencida: estado === 'Pendiente' && hoy > venc,
@@ -95,6 +95,9 @@ export function periodoAFactura(u: Usuario, p: Periodo, hoy = new Date()): Factu
     fija: p.fija,
   }
 }
+
+/** Valor real de un periodo: el que guardó el servidor; si no hay, el cobro fijo o el calculado por consumo. */
+export const montoDe = (u: Pick<Usuario, 'estrato'>, p: Periodo) => p.monto ?? (p.fija ? cobroFijo(u.estrato) : montoPeriodo(p.consumo, u.estrato, p.mes, p.anio))
 
 export function facturasDe(u: Usuario, hoy = new Date()): Factura[] {
   return u.historial.filter((p) => p.estado !== 'Suspendido').map((p) => periodoAFactura(u, p, hoy))
@@ -128,4 +131,38 @@ export function resumenUsuario(u: Usuario, hoy = new Date()): Resumen {
 
 export function todasLasFacturas(usuarios: Usuario[], hoy = new Date()): Factura[] {
   return usuarios.flatMap((u) => facturasDe(u, hoy)).sort((a, b) => clavePeriodo(b.mes, b.anio) - clavePeriodo(a.mes, a.anio) || a.cliente.localeCompare(b.cliente))
+}
+
+/**
+ * De qué meses son las facturas que se pagaron (p. ej. lo que entró hoy a caja).
+ * La caja suma por DÍA DE PAGO; los informes de recaudo suman por MES DE LA FACTURA:
+ * un pago de hoy puede traer facturas atrasadas de otros meses.
+ */
+export function desglosePorPeriodo(pagos: { facturaIds: string[]; monto: number }[], facturas: Factura[]) {
+  const porId = new Map(facturas.map((f) => [f.id, f]))
+  const grupos = new Map<number, { mes: number; anio: number; periodo: string; monto: number; facturas: number }>()
+  let otros = 0
+  for (const p of pagos) {
+    let cubierto = 0
+    for (const id of p.facturaIds) {
+      const f = porId.get(id)
+      if (!f) continue
+      const k = f.anio * 12 + f.mes
+      const g = grupos.get(k) ?? { mes: f.mes, anio: f.anio, periodo: f.periodo, monto: 0, facturas: 0 }
+      g.monto += f.monto
+      g.facturas++
+      grupos.set(k, g)
+      cubierto += f.monto
+    }
+    otros += Math.max(0, p.monto - cubierto) // reconexión u otros cobros
+  }
+  return { periodos: [...grupos.values()].sort((a, b) => b.anio * 12 + b.mes - (a.anio * 12 + a.mes)), otros }
+}
+
+/** "Octubre 2026 $14.000 · Marzo 2026 $14.000 (atrasada)" */
+export function textoDesglose(d: ReturnType<typeof desglosePorPeriodo>, hoy = new Date()) {
+  const actual = hoy.getFullYear() * 12 + hoy.getMonth() + 1
+  const partes = d.periodos.map((g) => `${MESES[g.mes - 1].slice(0, 3)} ${g.anio}: $${Math.round(g.monto).toLocaleString('es-CO')}${g.anio * 12 + g.mes < actual - 1 ? ' (atrasada)' : ''}`)
+  if (d.otros > 0) partes.push(`reconexión/otros: $${Math.round(d.otros).toLocaleString('es-CO')}`)
+  return partes.join(' · ')
 }

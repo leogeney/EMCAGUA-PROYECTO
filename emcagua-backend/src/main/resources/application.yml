@@ -49,6 +49,10 @@ emcagua:
   # false (por defecto) = empieza limpia, solo con la cuenta admin.
   datos-demo: ${EMCAGUA_DEMO:false}
   zona-horaria: America/Bogota
+  # Copias de seguridad de la base de datos (cada noche a las 11 p. m. y al encender si falta la del día)
+  respaldos:
+    carpeta: ${EMCAGUA_RESPALDOS:${user.home}/Documents/EMCAGUA respaldos}
+    pg-bin: ${EMCAGUA_PG_BIN:C:/Program Files/PostgreSQL/16/bin}
 
 logging:
   level:

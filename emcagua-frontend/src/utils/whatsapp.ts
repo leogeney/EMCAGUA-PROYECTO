@@ -1,5 +1,5 @@
 import type { Resumen } from '../data/billing'
-import { COSTO_RECONEXION, TARIFA, UMBRAL_ALTO } from '../data/constants'
+import { cobroFijo, COSTO_RECONEXION, TARIFA, UMBRAL_ALTO } from '../data/constants'
 import type { Usuario } from '../data/types'
 import { cop, fechaCorta } from './format'
 import { getNextCutoff } from './cutoff'
@@ -19,7 +19,8 @@ export function whatsappUrl(u: Usuario, r: Resumen) {
   } else if (r.pagosDebe > 0) {
     cuerpo = `Tu factura por ${cop(r.deuda)} vence el ${venc}. Puedes pagarla en nuestras oficinas.`
   } else {
-    cuerpo = `¡Estás al día con tus pagos! ✅\nTu último consumo: ${r.consumoActual} m³ · ${cop(r.consumoActual * TARIFA[u.estrato])}.\nPróxima fecha de pago: ${fechaCorta(getNextCutoff())}.`
+    const ult = u.historial[u.historial.length - 1]
+    cuerpo = `¡Estás al día con tus pagos! ✅\n${ult?.fija ? `Tu última factura: ${cop(ult.monto ?? cobroFijo(u.estrato))} (cobro fijo mensual).` : `Tu último consumo: ${r.consumoActual} m³ · ${cop(ult?.monto ?? r.consumoActual * TARIFA[u.estrato])}.`}\nPróxima fecha de pago: ${fechaCorta(getNextCutoff())}.`
   }
   const msg = `Hola ${u.nombre}, te escribe EMCAGUA APC.\n${cuerpo}${alto}\nEl Carmen, Norte de Santander.`
   return `https://wa.me/${full}?text=${encodeURIComponent(msg)}`

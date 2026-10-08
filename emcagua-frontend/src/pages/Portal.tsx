@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { ImprimirFactura } from '../components/FacturaMediaHoja'
 import { ubicacion } from '../data/zonas'
 import { Link } from 'react-router-dom'
 import { useData } from '../data/DataContext'
@@ -6,12 +7,14 @@ import { usePqr, type NuevaPqr as DatosPqr } from '../data/PqrContext'
 import { facturasDe, nombrePeriodo, resumenUsuario } from '../data/billing'
 import { API_URL, mensajeError } from '../data/api'
 import { cargarConfigPublica } from '../data/config'
+import { barriosDe, cargarZonasPublicas, sectores, useZonas } from '../data/zonas'
 import { detalleFactura, reemplazarVigencias, type TarifaCRA } from '../data/tarifa'
 import { CHART, MESES } from '../data/constants'
 import { diasHabilesRestantes, sugerirCategoria } from '../data/pqr'
 import type { Factura, Pqr, TipoPqr, Usuario } from '../data/types'
 import { ColumnChart } from '../components/charts/charts'
 import Qr from '../components/Qr'
+import GraficaPagos from '../components/GraficaPagos'
 import { codigoFactura, urlVerificacion } from '../data/verificacion'
 import Logo from '../components/Logo'
 import Modal from '../components/ui/Modal'
@@ -19,6 +22,7 @@ import Ico from '../components/ui/Icon'
 import { useConfig } from '../data/config'
 import { cop, fecha, fechaCorta } from '../utils/format'
 import { etiquetaPredio, limpiarCedula, otrosPredios, saldoPropietario } from '../data/propietarios'
+import { getUsername, haySesionFuncionario, logout } from '../utils/session'
 
 const D = {
   lock: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z',
@@ -36,7 +40,12 @@ type Fuente = {
   pagar: (facturas: string[], referencia: string) => Promise<void>
   radicar: (p: DatosPqr) => Promise<Pqr>
 }
-type Remoto = { codigo: string; ultimos4: string; usuarios: Usuario[]; pqrs: Pqr[] }
+type Remoto = { codigo: string; clave: string; usuarios: Usuario[]; pqrs: Pqr[] }
+
+/* Demostración sin servidor: cuentas de la oficina virtual guardadas en este navegador (cédula → contraseña) */
+const CLAVE_DEMO = 'emcagua_portal_demo'
+const cuentasDemo = (): Record<string, string> => { try { return JSON.parse(localStorage.getItem(CLAVE_DEMO) ?? '{}') } catch { return {} } }
+const guardarCuentasDemo = (c: Record<string, string>) => { try { localStorage.setItem(CLAVE_DEMO, JSON.stringify(c)) } catch { /* sin almacenamiento */ } }
 
 /** Llamada pública al portal de la API. null = la API no está encendida (se usa la demostración). */
 async function portalApi<T>(ruta: string, cuerpo: unknown): Promise<T | null> {
@@ -63,24 +72,73 @@ export default function Portal() {
   const u = lista.find((x) => x.id === usuarioId)
   useEffect(() => { void cargarConfigPublica() }, [])
 
+  const [modo, setModo] = useState<'entrar' | 'crear' | 'nuevo'>('entrar')
+  const [funcionario, setFuncionario] = useState(haySesionFuncionario)
+  /** Un suscriptor entró en este navegador: la sesión de funcionario (si había) se cierra para que no pueda pasar al sistema interno. */
+  const cerrarFuncionario = () => { if (haySesionFuncionario()) { logout(); setFuncionario(false) } }
+  const [clave, setClave] = useState('')
+  const [clave2, setClave2] = useState('')
+  const [ver, setVer] = useState(false)
+  const [olvide, setOlvide] = useState(false)
+  const cambiarModo = (m: 'entrar' | 'crear' | 'nuevo') => { setModo(m); setError(''); setClave(''); setClave2(''); setTel(''); setOlvide(false) }
+  type RespCuenta = { inicial: string; usuarios: Usuario[]; pqrs: Pqr[]; tarifas: TarifaCRA[] }
+  const abrir = (q: string, c: string, r: RespCuenta) => { cerrarFuncionario(); reemplazarVigencias(r.tarifas); setError(''); setRemoto({ codigo: q, clave: c, usuarios: r.usuarios, pqrs: r.pqrs }); setUsuarioId(r.inicial) }
+  const buscarDemo = (q: string) => { const ced = limpiarCedula(q); return usuarios.find((y) => y.id === q) ?? (ced.length >= 6 ? usuarios.find((y) => limpiarCedula(y.cedula) === ced) : undefined) }
+
   const entrar = async () => {
-    const q = id.trim(), ced = limpiarCedula(q), t = tel.trim()
+    const q = id.trim()
+    if (!q || !clave) { setError('Escribe tu código o cédula y tu contraseña.'); return }
     setEntrando(true)
     try {
-      // 1) Con la API: la base de datos valida y devuelve los predios del dueño
-      const r = await portalApi<{ inicial: string; usuarios: Usuario[]; pqrs: Pqr[]; tarifas: TarifaCRA[] }>('/cuenta', { codigo: q, ultimos4: t })
-      if (r) { reemplazarVigencias(r.tarifas); setError(''); setRemoto({ codigo: q, ultimos4: t, usuarios: r.usuarios, pqrs: r.pqrs }); setUsuarioId(r.inicial); return }
+      // 1) Con la API: la base de datos valida la contraseña y devuelve los predios del dueño
+      const r = await portalApi<RespCuenta>('/cuenta', { codigo: q, clave })
+      if (r) { abrir(q, clave, r); return }
     } catch (e) {
       setError(mensajeError(e)); return
     } finally {
       setEntrando(false)
     }
-    // 2) Demostración: con el código entra a esa casa; con la cédula, a la primera de sus casas (y ve todas)
-    const x = usuarios.find((y) => y.id === q) ?? (ced.length >= 6 ? usuarios.find((y) => limpiarCedula(y.cedula) === ced) : undefined)
-    if (!x || x.telefono.replace(/\D/g, '').slice(-4) !== t) { setError('El código o la cédula no coinciden con los últimos 4 dígitos del celular.'); return }
-    setError(''); setUsuarioId(x.id)
+    // 2) Demostración (sin servidor): cuentas guardadas en este navegador
+    const x = buscarDemo(q)
+    if (!x || cuentasDemo()[limpiarCedula(x.cedula)] !== clave) { setError('El código o la cédula no coinciden con la contraseña.'); return }
+    cerrarFuncionario(); setError(''); setUsuarioId(x.id)
   }
-  const salir = () => { setUsuarioId(null); setRemoto(null); setId(''); setTel('') }
+
+  const crear = async () => {
+    const q = id.trim()
+    if (!q) { setError('Escribe tu código de suscriptor o tu cédula.'); return }
+    if (tel.length !== 4) { setError('Escribe los últimos 4 dígitos de tu celular.'); return }
+    if (clave.length < 8 || !/[a-zA-Z]/.test(clave) || !/\d/.test(clave)) { setError('La contraseña debe tener mínimo 8 caracteres, con letras y números.'); return }
+    if (clave !== clave2) { setError('Las dos contraseñas no coinciden.'); return }
+    setEntrando(true)
+    try {
+      const r = await portalApi<RespCuenta>('/registro', { codigo: q, ultimos4: tel, clave })
+      if (r) { abrir(q, clave, r); return }
+    } catch (e) {
+      setError(mensajeError(e)); return
+    } finally {
+      setEntrando(false)
+    }
+    const x = buscarDemo(q)
+    if (!x) { setError('No encontramos ese código de suscriptor o cédula. Revisa tu factura.'); return }
+    if (x.telefono.replace(/\D/g, '').slice(-4) !== tel) { setError('Los últimos 4 dígitos no coinciden con el celular registrado en tu factura.'); return }
+    const cs = cuentasDemo()
+    if (cs[limpiarCedula(x.cedula)]) { setError('Ya tienes una cuenta: entra con tu contraseña.'); return }
+    guardarCuentasDemo({ ...cs, [limpiarCedula(x.cedula)]: clave })
+    cerrarFuncionario(); setError(''); setUsuarioId(x.id)
+  }
+  const salir = () => { setUsuarioId(null); setRemoto(null); setId(''); setTel(''); setClave(''); setClave2('') }
+  const reglas = [{ ok: clave.length >= 8, t: 'Mínimo 8 caracteres' }, { ok: /[a-zA-Z]/.test(clave) && /\d/.test(clave), t: 'Letras y números' }, { ok: !!clave && clave === clave2, t: 'Las dos coinciden' }]
+  const enter = (fn: () => Promise<void>) => (e: React.KeyboardEvent) => { if (e.key === 'Enter') void fn() }
+  const campoClave = (valor: string, set: (v: string) => void, label: string, fn: () => Promise<void>, auto: string) => (
+    <div>
+      <label className="field-label">{label}</label>
+      <div className="relative">
+        <input type={ver ? 'text' : 'password'} value={valor} onChange={(e) => { set(e.target.value); setError('') }} onKeyDown={enter(fn)} autoComplete={auto} placeholder="••••••••" className="field h-12 text-lg pr-20" />
+        <button type="button" onClick={() => setVer((v) => !v)} className="absolute right-2 top-1/2 -translate-y-1/2 h-8 px-2.5 rounded-lg text-xs font-semibold text-gray-500 hover:text-dark hover:bg-gray-100">{ver ? 'Ocultar' : 'Ver'}</button>
+      </div>
+    </div>
+  )
 
   return (
     <div className="min-h-screen bg-[#F4F5F3]">
@@ -91,9 +149,18 @@ export default function Portal() {
         </div>
       </header>
 
+      {funcionario && !u && (
+        <div className="bg-amber-50 border-b border-amber-200">
+          <div className="max-w-5xl mx-auto px-4 py-2.5 flex flex-col sm:flex-row sm:items-center gap-2 text-sm text-amber-900">
+            <span className="flex-1">Hay una sesión de funcionario abierta en este navegador ({getUsername()}). Si este computador lo va a usar un suscriptor, ciérrala primero.</span>
+            <button onClick={() => { logout(); setFuncionario(false) }} className="btn-sm h-8 bg-white">Cerrar sesión de funcionario</button>
+          </div>
+        </div>
+      )}
+
       {!u ? (
-        <main className="max-w-5xl mx-auto px-4 py-10 grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
-          <div>
+        <main className={`max-w-5xl mx-auto px-4 py-10 grid grid-cols-1 lg:grid-cols-2 gap-8 ${modo === 'nuevo' ? 'items-start' : 'items-center'}`}>
+          <div className={modo === 'nuevo' ? 'lg:sticky lg:top-10 lg:pt-16' : ''}>
             <p className="text-xs font-semibold tracking-[0.14em] text-primary-700 uppercase mb-3">Oficina virtual EMCAGUA</p>
             <h1 className="text-4xl font-extrabold tracking-tight text-dark leading-tight">Tu agua, desde el celular</h1>
             <p className="text-gray-600 mt-3">Consulta tu factura, págala en línea, revisa tu consumo y radica peticiones o reclamos sin hacer fila.</p>
@@ -102,15 +169,43 @@ export default function Portal() {
             </ul>
           </div>
           <div className="card p-6 sm:p-8">
-            <h2 className="text-lg font-bold text-dark mb-1">Ingresa</h2>
-            <p className="text-sm text-gray-500 mb-5">Con el código de suscriptor que aparece en tu factura, o con tu cédula si tienes varias casas.</p>
-            <div className="space-y-3">
-              <div><label className="field-label">Código de suscriptor o cédula</label><input value={id} onChange={(e) => setId(e.target.value)} placeholder="Ej: 10237" className="field h-12 text-lg tabular-nums" inputMode="numeric" /></div>
-              <div><label className="field-label">Últimos 4 dígitos de tu celular</label><input value={tel} onChange={(e) => setTel(e.target.value.replace(/\D/g, '').slice(0, 4))} onKeyDown={(e) => e.key === 'Enter' && void entrar()} placeholder="••••" className="field h-12 text-lg tracking-[0.4em] tabular-nums" inputMode="numeric" /></div>
-              {error && <p className="text-sm text-red-600">{error}</p>}
-              <button onClick={() => void entrar()} disabled={entrando} className="btn-primary w-full h-12">{entrando ? 'Consultando…' : 'Consultar'}</button>
-              <p className="text-[11px] text-gray-400 flex items-center gap-1.5"><Ico d={D.lock} className="w-3.5 h-3.5" /> Solo tú ves la información de tu cuenta.</p>
-            </div>
+            {modo === 'nuevo' ? (
+              <RegistroNuevo onVolver={() => cambiarModo('entrar')} onTipo={cambiarModo} />
+            ) : modo === 'entrar' ? (
+              <>
+                <h2 className="text-lg font-bold text-dark mb-1">Ingresa</h2>
+                <p className="text-sm text-gray-500 mb-5">Con el código de suscriptor que aparece en tu factura (o tu cédula, si tienes varias casas) y tu contraseña.</p>
+                <div className="space-y-3">
+                  <div><label className="field-label">Código de suscriptor o cédula</label><input value={id} onChange={(e) => { setId(e.target.value); setError('') }} placeholder="Ej: 10237" className="field h-12 text-lg tabular-nums" inputMode="numeric" autoComplete="username" /></div>
+                  {campoClave(clave, setClave, 'Contraseña', entrar, 'current-password')}
+                  <div className="flex justify-end"><button type="button" onClick={() => setOlvide((x) => !x)} className="text-xs font-semibold text-secondary hover:underline">¿Olvidaste tu contraseña?</button></div>
+                  {olvide && <p className="text-xs text-gray-600 bg-gray-soft rounded-lg px-3 py-2">Acércate a la oficina de EMCAGUA con tu cédula: te quitamos la contraseña anterior y vuelves a crear tu cuenta desde aquí.</p>}
+                  {error && <p className="text-sm text-red-600">{error}</p>}
+                  <button onClick={() => void entrar()} disabled={entrando} className="btn-primary w-full h-12">{entrando ? 'Entrando…' : 'Entrar'}</button>
+                </div>
+                <div className="flex items-center gap-3 my-5"><span className="h-px flex-1 bg-gray-200" /><span className="text-xs text-gray-400">¿Primera vez aquí?</span><span className="h-px flex-1 bg-gray-200" /></div>
+                <button onClick={() => cambiarModo('crear')} className="btn-secondary w-full h-12 border-secondary/30 text-secondary hover:bg-secondary/5">Crear cuenta</button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => cambiarModo('entrar')} className="text-xs font-semibold text-gray-500 hover:text-dark mb-3">← Ya tengo cuenta</button>
+                <TiposCuenta modo={modo} onCambiar={cambiarModo} />
+                <h2 className="text-lg font-bold text-dark mb-1">Crea tu cuenta</h2>
+                <p className="text-sm text-gray-500 mb-5">Para confirmar que eres el dueño te pedimos los últimos 4 dígitos del celular registrado en tu factura.</p>
+                <div className="space-y-3">
+                  <div><label className="field-label">Código de suscriptor o cédula</label><input value={id} onChange={(e) => { setId(e.target.value); setError('') }} placeholder="Ej: 10237" className="field h-12 text-lg tabular-nums" inputMode="numeric" autoComplete="username" /></div>
+                  <div><label className="field-label">Últimos 4 dígitos de tu celular</label><input value={tel} onChange={(e) => { setTel(e.target.value.replace(/\D/g, '').slice(0, 4)); setError('') }} placeholder="••••" className="field h-12 text-lg tracking-[0.4em] tabular-nums" inputMode="numeric" /></div>
+                  {campoClave(clave, setClave, 'Crea una contraseña', crear, 'new-password')}
+                  {campoClave(clave2, setClave2, 'Repite la contraseña', crear, 'new-password')}
+                  <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                    {reglas.map((r) => <li key={r.t} className={`flex items-center gap-1.5 ${r.ok ? 'text-green-700' : 'text-gray-400'}`}><Ico d={D.check} className="w-3.5 h-3.5" />{r.t}</li>)}
+                  </ul>
+                  {error && <p className="text-sm text-red-600">{error}</p>}
+                  <button onClick={() => void crear()} disabled={entrando} className="btn-primary w-full h-12">{entrando ? 'Creando…' : 'Crear cuenta y entrar'}</button>
+                </div>
+              </>
+            )}
+            <p className="text-[11px] text-gray-400 flex items-center gap-1.5 mt-4"><Ico d={D.lock} className="w-3.5 h-3.5" /> Solo tú ves la información de tu cuenta. Tu contraseña se guarda cifrada.</p>
           </div>
         </main>
       ) : (
@@ -131,7 +226,7 @@ function CuentaDemo({ u, onCambiar }: { u: Usuario; onCambiar: (id: string) => v
 
 /** Portal con los datos de la base de datos: pagar y radicar van a la API pública del portal. */
 function CuentaRemota({ u, remoto, setRemoto, onCambiar }: { u: Usuario; remoto: Remoto; setRemoto: (r: Remoto) => void; onCambiar: (id: string) => void }) {
-  const acceso = { codigo: remoto.codigo, ultimos4: remoto.ultimos4 }
+  const acceso = { codigo: remoto.codigo, clave: remoto.clave }
   const releer = async () => {
     const r = await portalApi<{ usuarios: Usuario[]; pqrs: Pqr[] }>('/cuenta', acceso)
     if (r) setRemoto({ ...remoto, usuarios: r.usuarios, pqrs: r.pqrs })
@@ -165,7 +260,7 @@ function Cuenta({ u, onCambiar, fuente }: { u: Usuario; onCambiar: (id: string) 
   const [ok, setOk] = useState<string | null>(null)
   const [pqrAbierta, setPqrAbierta] = useState(false)
   const [verFactura, setVerFactura] = useState<Factura | null>(null)
-  const fijo = u.historial.length > 0 && u.historial.slice(-6).every((h) => h.fija || h.estado === 'Suspendido')
+  const fijo = !u.conMedidor || (u.historial.length > 0 && u.historial.slice(-6).every((h) => h.fija || h.estado === 'Suspendido'))
 
   return (
     <main className="max-w-5xl mx-auto px-4 py-8 space-y-5">
@@ -206,12 +301,12 @@ function Cuenta({ u, onCambiar, fuente }: { u: Usuario; onCambiar: (id: string) 
         </section>
 
         <section className="card p-5">
-          <h2 className="font-bold text-dark mb-1">Tu consumo</h2>
+          <h2 className="font-bold text-dark mb-1">{fijo ? 'Tus pagos' : 'Tu consumo'}</h2>
           {fijo ? (
-            <div className="rounded-xl bg-amber-50 text-amber-900 px-4 py-3 text-sm mt-2">
-              <p className="font-semibold">Pagas un valor fijo cada mes</p>
-              <p className="text-xs mt-1">Tu predio todavía no tiene medidor, así que no se mide el consumo en m³. Se cobra el valor fijo de tu estrato ({cop(facturasDe(u).slice(-1)[0]?.monto ?? 0)} al mes). Cuando se instale el medidor, aquí verás cuánta agua gastas.</p>
-            </div>
+            <>
+              <p className="text-xs text-gray-500 mb-3">Tu predio aún no tiene medidor: pagas un valor fijo según tu estrato. Cuando se instale, aquí verás cuánta agua gastas.</p>
+              <GraficaPagos facturas={facturasDe(u)} />
+            </>
           ) : <>
           <p className="text-xs text-gray-500 mb-3">Últimos {hist.length} meses · promedio {Math.round(r.consumoPromedio)} m³</p>
           <ColumnChart data={hist.map((h, i) => ({ label: MESES[h.mes - 1].slice(0, 3), full: nombrePeriodo(h.mes, h.anio), values: [h.consumo], colors: [i === hist.length - 1 ? CHART.serie1 : '#b9d9d4'] }))} series={[{ name: 'Consumo', color: CHART.serie1 }]} format={(n) => `${n} m³`} height={170} />
@@ -297,13 +392,16 @@ function FacturaPortal({ f, u, onClose, onPagar }: { f: Factura; u: Usuario; onC
   const c = useConfig()
   const det = detalleFactura(f)
   const anterior = u.historial.find((h) => h.anio * 12 + h.mes === f.anio * 12 + f.mes - 1)
+  const [imprimir, setImprimir] = useState(false)
+  const listo = useCallback(() => setImprimir(false), [])
   return (
     <Modal open onClose={onClose} size="lg" title={`Factura ${f.periodo}`} subtitle={f.id}
       footer={<>
         <button onClick={onClose} className="btn-secondary flex-1">Cerrar</button>
-        <button onClick={() => window.print()} className="btn flex-1 bg-dark text-white hover:bg-black">Descargar / imprimir</button>
+        <button onClick={() => setImprimir(true)} className="btn flex-1 bg-dark text-white hover:bg-black">Descargar / imprimir</button>
         {f.estado !== 'Pagada' && <button onClick={onPagar} className="btn-primary flex-1">Pagar {cop(f.monto)}</button>}
       </>}>
+      {imprimir && <ImprimirFactura f={f} u={u} onListo={listo} />}
       <div className="print-area px-6 py-5">
         <div className="flex items-start justify-between gap-4 pb-4 border-b-2 border-secondary">
           <div className="flex gap-3">
@@ -357,6 +455,109 @@ function FacturaPortal({ f, u, onClose, onPagar }: { f: Factura; u: Usuario; onC
         </div>
       </div>
     </Modal>
+  )
+}
+
+/** Selector: ¿ya es suscriptor (tiene factura) o es una persona nueva? */
+function TiposCuenta({ modo, onCambiar }: { modo: 'entrar' | 'crear' | 'nuevo'; onCambiar: (m: 'crear' | 'nuevo') => void }) {
+  return (
+    <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-gray-soft mb-5">
+      {([['crear', 'Ya tengo factura'], ['nuevo', 'Soy nuevo']] as const).map(([m, t]) => (
+        <button key={m} type="button" onClick={() => onCambiar(m)} className={`h-9 rounded-lg text-sm font-semibold transition-colors ${modo === m ? 'bg-white text-dark shadow-sm' : 'text-gray-500 hover:text-dark'}`}>{t}</button>
+      ))}
+    </div>
+  )
+}
+
+/** Registro de una persona nueva: queda como solicitud hasta que la empresa la apruebe. */
+function RegistroNuevo({ onVolver, onTipo }: { onVolver: () => void; onTipo: (m: 'crear' | 'nuevo') => void }) {
+  useZonas()
+  useEffect(() => { void cargarZonasPublicas() }, [])
+  const [f, setF] = useState({ nombre: '', cedula: '', telefono: '', correo: '', direccion: '', sector: '', barrio: '', estrato: 0, conMedidor: false, medidor: '', observacion: '', clave: '', clave2: '', acepta: false })
+  const [ver, setVer] = useState(false)
+  const [error, setError] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const [listo, setListo] = useState<{ radicado: string; nombre: string } | null>(null)
+  const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => { setF((x) => ({ ...x, [k]: v })); setError('') }
+  const sec = f.sector || sectores()[0] || ''
+  const barrios = barriosDe(sec)
+  const reglas = [{ ok: f.clave.length >= 8, t: 'Mínimo 8 caracteres' }, { ok: /[a-zA-Z]/.test(f.clave) && /\d/.test(f.clave), t: 'Letras y números' }, { ok: !!f.clave && f.clave === f.clave2, t: 'Las dos coinciden' }]
+
+  const enviar = async () => {
+    const tel = f.telefono.replace(/\D/g, '')
+    if (f.nombre.trim().split(/\s+/).length < 2) return setError('Escribe tu nombre completo (nombre y apellido).')
+    if (f.cedula.length < 5) return setError('Escribe tu número de cédula.')
+    if (!/^3\d{9}$/.test(tel)) return setError('Escribe un celular de 10 dígitos que empiece por 3.')
+    if (f.direccion.trim().length < 5) return setError('Escribe la dirección del predio.')
+    if (!f.estrato) return setError('Elige el estrato (aparece en tu recibo de la luz).')
+    if (!reglas.every((r) => r.ok)) return setError('Revisa la contraseña: mínimo 8 caracteres, con letras y números, y que las dos coincidan.')
+    if (!f.acepta) return setError('Debes autorizar el tratamiento de tus datos personales.')
+    setEnviando(true)
+    try {
+      const r = await portalApi<{ radicado: string; nombre: string }>('/solicitud', { nombre: f.nombre, cedula: f.cedula, telefono: tel, correo: f.correo, direccion: f.direccion, sector: sec, barrio: f.barrio, estrato: f.estrato, conMedidor: f.conMedidor, medidor: f.medidor, observacion: f.observacion, clave: f.clave, aceptaDatos: f.acepta })
+      if (!r) return setError('No hay conexión con el servidor. Intenta más tarde o acércate a la oficina.')
+      setListo(r)
+    } catch (e) { setError(mensajeError(e)) } finally { setEnviando(false) }
+  }
+
+  if (listo) return (
+    <div className="text-center py-4">
+      <span className="mx-auto h-14 w-14 rounded-full bg-green-100 text-green-700 flex items-center justify-center"><Ico d={D.check} className="w-7 h-7" /></span>
+      <h2 className="text-lg font-bold text-dark mt-4">¡Solicitud enviada!</h2>
+      <p className="text-sm text-gray-600 mt-2">Tu número de solicitud es <b className="font-mono text-dark">{listo.radicado}</b>.</p>
+      <p className="text-sm text-gray-500 mt-2">La empresa revisará tus datos (puede visitar el predio para confirmar el estrato y el medidor). Cuando la aprueben podrás entrar con tu <b>cédula</b> y la <b>contraseña</b> que creaste.</p>
+      <button onClick={onVolver} className="btn-primary w-full h-12 mt-6">Volver a ingresar</button>
+    </div>
+  )
+
+  const txt = (k: 'nombre' | 'correo' | 'direccion', label: string, ph: string, extra = {}) => (
+    <div><label className="field-label">{label}</label><input value={f[k]} onChange={(e) => set(k, e.target.value)} placeholder={ph} className="field h-11" {...extra} /></div>
+  )
+  return (
+    <>
+      <button onClick={onVolver} className="text-xs font-semibold text-gray-500 hover:text-dark mb-3">← Ya tengo cuenta</button>
+      <TiposCuenta modo="nuevo" onCambiar={onTipo} />
+      <h2 className="text-lg font-bold text-dark mb-1">Regístrate como usuario nuevo</h2>
+      <p className="text-sm text-gray-500 mb-5">Llena tus datos y los del predio. La empresa los revisa y, al aprobarlos, queda creada tu cuenta.</p>
+      <div className="space-y-3">
+        <p className="text-[11px] font-bold uppercase tracking-wider text-secondary">Tus datos</p>
+        {txt('nombre', 'Nombre completo', 'Nombres y apellidos', { autoComplete: 'name' })}
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="field-label">Cédula</label><input value={f.cedula} onChange={(e) => set('cedula', e.target.value.replace(/\D/g, '').slice(0, 15))} placeholder="Solo números" className="field h-11 tabular-nums" inputMode="numeric" /></div>
+          <div><label className="field-label">Celular</label><input value={f.telefono} onChange={(e) => set('telefono', e.target.value.replace(/\D/g, '').slice(0, 10))} placeholder="3001234567" className="field h-11 tabular-nums" inputMode="tel" autoComplete="tel" /></div>
+        </div>
+        {txt('correo', 'Correo (opcional)', 'tucorreo@ejemplo.com', { type: 'email', autoComplete: 'email' })}
+
+        <p className="text-[11px] font-bold uppercase tracking-wider text-secondary pt-2">El predio</p>
+        {txt('direccion', 'Dirección', 'Ej: Calle 5 # 4-20', { autoComplete: 'street-address' })}
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="field-label">Sector</label><select value={sec} onChange={(e) => setF((x) => ({ ...x, sector: e.target.value, barrio: '' }))} className="field h-11">{sectores().map((z) => <option key={z}>{z}</option>)}</select></div>
+          <div><label className="field-label">Barrio</label>{barrios.length ? <select value={f.barrio} onChange={(e) => set('barrio', e.target.value)} className="field h-11"><option value="">No sé / otro</option>{barrios.map((b) => <option key={b}>{b}</option>)}</select> : <input value={f.barrio} onChange={(e) => set('barrio', e.target.value)} placeholder="Opcional" className="field h-11" />}</div>
+        </div>
+        <div>
+          <label className="field-label">Estrato</label>
+          <div className="flex gap-2">{[1, 2, 3, 4, 5, 6].map((e) => <button key={e} type="button" onClick={() => set('estrato', e)} className={`flex-1 h-10 rounded-xl border-2 text-sm font-bold ${f.estrato === e ? 'border-secondary text-secondary bg-secondary/5' : 'border-gray-200 text-gray-500'}`}>{e}</button>)}</div>
+          <p className="text-[11px] text-gray-400 mt-1">Lo encuentras en tu recibo de la luz.</p>
+        </div>
+        <div className="rounded-xl border border-gray-100 p-3">
+          <label className="flex items-center gap-2 text-sm font-medium text-dark cursor-pointer"><input type="checkbox" checked={f.conMedidor} onChange={(e) => set('conMedidor', e.target.checked)} className="accent-secondary h-4 w-4" /> El predio tiene medidor de agua</label>
+          {f.conMedidor && <input value={f.medidor} onChange={(e) => set('medidor', e.target.value)} placeholder="Número del medidor (si lo ves)" className="field h-11 mt-2" />}
+        </div>
+        <div><label className="field-label">Algo más que debamos saber (opcional)</label><textarea value={f.observacion} onChange={(e) => set('observacion', e.target.value)} rows={2} placeholder="Ej: es una casa nueva, el contador está en el andén…" className="field py-2.5 h-auto" /></div>
+
+        <p className="text-[11px] font-bold uppercase tracking-wider text-secondary pt-2">Tu contraseña</p>
+        {(['clave', 'clave2'] as const).map((k) => (
+          <div key={k}><label className="field-label">{k === 'clave' ? 'Crea una contraseña' : 'Repite la contraseña'}</label>
+            <div className="relative"><input type={ver ? 'text' : 'password'} value={f[k]} onChange={(e) => set(k, e.target.value)} autoComplete="new-password" placeholder="••••••••" className="field h-11 pr-20" /><button type="button" onClick={() => setVer((v) => !v)} className="absolute right-2 top-1/2 -translate-y-1/2 h-8 px-2.5 rounded-lg text-xs font-semibold text-gray-500 hover:text-dark hover:bg-gray-100">{ver ? 'Ocultar' : 'Ver'}</button></div>
+          </div>
+        ))}
+        <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs">{reglas.map((r) => <li key={r.t} className={`flex items-center gap-1.5 ${r.ok ? 'text-green-700' : 'text-gray-400'}`}><Ico d={D.check} className="w-3.5 h-3.5" />{r.t}</li>)}</ul>
+
+        <label className="flex items-start gap-2 text-xs text-gray-600 cursor-pointer pt-1"><input type="checkbox" checked={f.acepta} onChange={(e) => set('acepta', e.target.checked)} className="accent-secondary h-4 w-4 mt-0.5 shrink-0" /> Autorizo a EMCAGUA APC a tratar mis datos personales para prestar el servicio y contactarme (Ley 1581 de 2012).</label>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <button onClick={() => void enviar()} disabled={enviando} className="btn-primary w-full h-12">{enviando ? 'Enviando…' : 'Enviar solicitud'}</button>
+      </div>
+    </>
   )
 }
 

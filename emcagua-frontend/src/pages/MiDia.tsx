@@ -6,7 +6,7 @@ import { diasHabilesRestantes } from '../data/pqr'
 import { iso } from '../data/operacion'
 import { balanceHidrico, IANC_META } from '../data/perdidas'
 import { calendarioObligaciones } from '../data/nomina'
-import { vencimientoPeriodo } from '../data/billing'
+import { desglosePorPeriodo, textoDesglose, vencimientoPeriodo } from '../data/billing'
 import { fechaLarga } from '../data/documentos'
 import Ico from '../components/ui/Icon'
 import { copCompacto, pct } from '../utils/format'
@@ -16,7 +16,7 @@ import { useRecomendaciones } from '../data/recomendaciones'
 import { PanelRecomendaciones } from '../components/asistente/Recomendaciones'
 
 export default function MiDia() {
-  const { usuarios, pagos, resumen, alarmas } = useData()
+  const { usuarios, pagos, resumen, alarmas, facturas } = useData()
   const { pqrs } = usePqr()
   const hoy = new Date()
   const h = hoy.getHours()
@@ -54,7 +54,7 @@ export default function MiDia() {
       </div>
 
       <section className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
-        <Num k="Recaudo de hoy" v={copCompacto(pagosHoy.reduce((s, p) => s + p.monto, 0))} sub={`${pagosHoy.length} pago(s)`} />
+        <Num k="Recaudo de hoy" v={copCompacto(pagosHoy.reduce((s, p) => s + p.monto, 0))} sub={pagosHoy.length ? `${pagosHoy.length} pago(s) · ${textoDesglose(desglosePorPeriodo(pagosHoy, facturas))}` : 'Sin pagos todavía'} />
         <Num k="PQR abiertas" v={abiertasPqr.length} sub={`${vencidas.length} vencida(s)`} mal={vencidas.length > 0} />
         <Num k="Usuarios en mora" v={morosos.length} sub={copCompacto(morosos.reduce((s, u) => s + resumen(u).deuda, 0))} mal={morosos.length > 0} />
         <Num k="Alarmas de medidores" v={alarmas.length} sub={`${graves.length} grave(s)`} mal={graves.length > 0} />

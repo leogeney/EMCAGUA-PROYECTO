@@ -66,3 +66,56 @@ body {
   .no-print { display: none !important; }
   html, body, #root, .h-screen, main { height: auto !important; overflow: visible !important; }
 }
+
+/* ---------- Factura en media hoja carta (21,6 × 14 cm) ---------- */
+#zona-impresion { display: none; }
+@media print {
+  body.imprimiendo-factura > *:not(#zona-impresion) { display: none !important; }
+  body.imprimiendo-factura #zona-impresion, body.imprimiendo-factura #zona-impresion * { visibility: visible !important; }
+  body.imprimiendo-factura #zona-impresion { display: block; position: static; page: factura; }
+  @page factura { size: letter portrait; margin: 0; }
+}
+.fmh { width: 215.9mm; font-family: var(--font-sans); color: #1E2A1E; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.fmh-hoja { box-sizing: border-box; height: 133mm; padding: 7mm 9mm 5mm; display: flex; flex-direction: column; gap: 3mm; overflow: hidden; font-size: 8.4pt; line-height: 1.3; }
+.fmh-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 6mm; padding-bottom: 2.5mm; border-bottom: 0.6mm solid #156D6D; }
+.fmh-marca { display: flex; gap: 3mm; align-items: center; min-width: 0; }
+.fmh-marca img { width: 14mm; height: 14mm; object-fit: contain; }
+.fmh-marca b { display: block; font-size: 12pt; font-weight: 800; }
+.fmh-marca span { display: block; font-size: 7pt; color: #5d665c; }
+.fmh-marca .fmh-sub { color: #156D6D; font-weight: 600; }
+.fmh-num { text-align: right; flex: none; }
+.fmh-num .fmh-tit { display: block; font-size: 6.8pt; text-transform: uppercase; letter-spacing: .08em; color: #8a9288; font-weight: 700; }
+.fmh-num b { display: block; font-size: 11pt; font-family: ui-monospace, monospace; margin: .5mm 0 1mm; }
+.fmh-estado { display: inline-block; font-size: 7pt; font-weight: 700; padding: .6mm 2.2mm; border-radius: 99px; border: .3mm solid currentColor; }
+.fmh-estado.ok { color: #2F7D32; } .fmh-estado.pend { color: #B7791F; } .fmh-estado.mal { color: #C0392B; }
+.fmh-datos { display: grid; grid-template-columns: 1.3fr 1.3fr 1fr 1fr; gap: 2mm; }
+.fmh-datos > div { background: #F3F5F2; border-radius: 2mm; padding: 1.8mm 2.5mm; min-width: 0; }
+.fmh-datos span { display: block; font-size: 6.4pt; text-transform: uppercase; letter-spacing: .07em; color: #8a9288; font-weight: 700; }
+.fmh-datos b { display: block; font-size: 9pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fmh-datos small { display: block; font-size: 7pt; color: #5d665c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fmh-datos .fmh-vence { background: #156D6D; color: #fff; }
+.fmh-datos .fmh-vence span, .fmh-datos .fmh-vence small { color: rgba(255,255,255,.75); }
+.fmh-cuerpo { display: grid; grid-template-columns: 1.35fr 1fr; gap: 4mm; flex: 1; min-height: 0; }
+.fmh-tabla { width: 100%; border-collapse: collapse; align-self: start; }
+.fmh-tabla td { padding: 1.1mm 2mm; border-bottom: .2mm solid #E4E8E2; }
+.fmh-tabla td:last-child { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; }
+.fmh-tabla tr.sub td { color: #2F7D32; }
+.fmh-tabla tfoot td { background: #1E2A1E; color: #fff; font-weight: 800; font-size: 10.5pt; padding: 2mm; border: 0; }
+.fmh-tabla tfoot td:first-child { border-radius: 1.5mm 0 0 1.5mm; font-size: 8pt; letter-spacing: .05em; }
+.fmh-tabla tfoot td:last-child { border-radius: 0 1.5mm 1.5mm 0; }
+.fmh-lado { display: flex; flex-direction: column; gap: 2.5mm; min-width: 0; }
+.fmh-lbl { display: block; font-size: 6.4pt; text-transform: uppercase; letter-spacing: .07em; color: #8a9288; font-weight: 700; margin-bottom: 1mm; }
+.fmh-barras { display: flex; align-items: flex-end; gap: 1.5mm; height: 20mm; }
+.fmh-barras > div { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; font-size: 6.4pt; color: #5d665c; }
+.fmh-barras i { display: block; width: 70%; background: #b9d9d4; border-radius: .8mm .8mm 0 0; }
+.fmh-barras .act i { background: #156D6D; }
+.fmh-barras em { font-style: normal; font-weight: 700; color: #1E2A1E; }
+.fmh-nota { background: #FFF8EB; border: .2mm solid #F1DDB2; color: #7A5212; border-radius: 2mm; padding: 2mm 2.5mm; font-size: 7.4pt; }
+.fmh-nota b { display: block; font-size: 8pt; }
+.fmh-qr { display: flex; gap: 2.5mm; align-items: center; font-size: 7pt; color: #5d665c; }
+.fmh-qr b { display: block; font-family: ui-monospace, monospace; color: #1E2A1E; font-size: 8.5pt; }
+.fmh-pie { font-size: 6.8pt; color: #5d665c; border-top: .2mm solid #E4E8E2; padding-top: 1.5mm; }
+.fmh-corte { height: 6.7mm; display: flex; align-items: center; justify-content: center; font-size: 7pt; color: #9aa09a; letter-spacing: .05em; white-space: nowrap; overflow: hidden; }
+.fmh-firma { margin-top: auto; font-size: 7pt; color: #5d665c; text-align: center; }
+.fmh-firma span { display: block; border-bottom: .3mm solid #1E2A1E; height: 10mm; margin: 0 6mm 1mm; }
+.fmh-tabla tfoot td:first-child { box-shadow: 1px 0 0 #1E2A1E; }

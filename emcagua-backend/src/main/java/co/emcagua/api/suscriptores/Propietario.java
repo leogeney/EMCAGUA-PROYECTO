@@ -1,5 +1,9 @@
 package co.emcagua.api.suscriptores;
 
+import java.time.Instant;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import co.emcagua.api.comun.Entidad;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -32,6 +36,16 @@ public class Propietario extends Entidad {
 
     @Column(length = 120)
     private String correo;
+
+    /** Contraseña de la oficina virtual (BCrypt). null = el suscriptor aún no ha creado su cuenta. Nunca sale en la API. */
+    @JsonIgnore
+    @Column(length = 100)
+    private String clavePortal;
+
+    /** Cuándo creó su cuenta en la oficina virtual. */
+    private Instant cuentaPortalCreada;
+
+    public boolean isCuentaPortal() { return clavePortal != null; }
 
     public Propietario(String cedula, String nombre, String telefono) {
         this.cedula = cedula;

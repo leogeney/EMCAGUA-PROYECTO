@@ -2,7 +2,9 @@ import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useData } from '../data/DataContext'
 import { serieMensual } from '../data/analytics'
-import { UMBRAL_ALTO } from '../data/constants'
+import { cobroFijo, UMBRAL_ALTO } from '../data/constants'
+import { useConfig } from '../data/config'
+import { desglosePorPeriodo, textoDesglose } from '../data/billing'
 import { ColumnChart } from '../components/charts/charts'
 import { CHART } from '../data/constants'
 import StatTile from '../components/ui/StatTile'
@@ -21,6 +23,7 @@ const ACCESOS = [
 
 export default function Dashboard() {
   const { usuarios, pagos, facturas, resumen } = useData()
+  const conf = useConfig()
   const username = getUsername()
   const nextCutoff = getNextCutoff()
   const hoy = new Date()
@@ -28,6 +31,7 @@ export default function Dashboard() {
   const serie = useMemo(() => serieMensual(usuarios, 12), [usuarios])
   const pagosHoy = pagos.filter((p) => mismoDia(p.timestamp, hoy))
   const cajaHoy = pagosHoy.reduce((s, p) => s + p.monto, 0)
+  const desgloseHoy = textoDesglose(desglosePorPeriodo(pagosHoy, facturas))
   const pendientes = facturas.filter((f) => f.estado === 'Pendiente')
   const vencidos = usuarios.filter((u) => u.estado === 'Activo' && resumen(u).vencido)
   const cortados = usuarios.filter((u) => u.estado === 'Cortado').length
@@ -66,7 +70,7 @@ export default function Dashboard() {
         <StatTile
           label="Caja de hoy"
           value={copCompacto(cajaHoy)}
-          sub={`${pagosHoy.length} pagos registrados`}
+          sub={pagosHoy.length ? `${pagosHoy.length} pago(s) · ${desgloseHoy}` : 'Sin pagos todavía'}
           tone="primary"
           icon={<Icon d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />}
         />
@@ -91,7 +95,7 @@ export default function Dashboard() {
           <div className="flex items-start justify-between gap-3">
             <div>
               <h3 className="text-[15px] font-bold text-dark">Recaudo últimos 12 meses</h3>
-              <p className="text-xs text-gray-500 mt-1">Valor pagado de las facturas de cada periodo</p>
+              <p className="text-xs text-gray-500 mt-1">Lo pagado de las facturas de cada mes, sin importar el día en que se pagaron. No es lo mismo que la caja del día: hoy pueden entrar facturas atrasadas de otros meses.</p>
             </div>
             <Link to="/analitica" className="btn-sm no-underline">Ver analítica →</Link>
           </div>
@@ -106,11 +110,19 @@ export default function Dashboard() {
               <p className="text-xl font-extrabold text-dark tabular-nums">{copCompacto(ult.recaudado)}</p>
               <p className="text-xs text-gray-500">de {copCompacto(ult.facturado)} facturado</p>
             </div>
+            {conf.modoSinMedidores ? (
+              <div className="hidden sm:block">
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Cobro fijo esperado</p>
+                <p className="text-xl font-extrabold text-dark tabular-nums">{copCompacto(usuarios.filter((u) => u.estado !== 'Cortado').reduce((s, u) => s + cobroFijo(u.estrato), 0))}</p>
+                <p className="text-xs text-gray-500">Próximo cierre · sin medidores</p>
+              </div>
+            ) : (
             <div className="hidden sm:block">
               <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Consumo {ult.label}</p>
               <p className="text-xl font-extrabold text-dark tabular-nums">{num(ult.consumo)} m³</p>
               <p className="text-xs text-gray-500">{num(ult.consumo / Math.max(1, ult.usuariosConsumo), 1)} m³ por usuario</p>
             </div>
+            )}
           </div>
           <div className="mt-4">
             <ColumnChart

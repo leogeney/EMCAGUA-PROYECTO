@@ -2,6 +2,7 @@
 /** Pestañas de caja que se muestran dentro de Pagos: arqueo del día, gastos y resumen mensual. */
 import { useMemo, useState } from 'react'
 import { useData } from '../data/DataContext'
+import { desglosePorPeriodo, textoDesglose } from '../data/billing'
 import { useOperacion } from '../data/OperacionContext'
 import { CATEGORIAS_EGRESO, iso, type CategoriaEgreso, type Egreso } from '../data/operacion'
 import { CHART, MESES } from '../data/constants'
@@ -22,7 +23,7 @@ const D = {
 /* ------------------------------- Caja del día ------------------------------- */
 
 export function CajaDia() {
-  const { pagos } = useData()
+  const { pagos, facturas } = useData()
   const { egresos, cierres, cerrarCaja } = useOperacion()
   const toast = useToast()
   const [dia, setDia] = useState(() => iso(new Date()))
@@ -48,7 +49,7 @@ export function CajaDia() {
         {cierre ? <span className="badge-ok">Caja cerrada por {cierre.cajero} a las {hora(cierre.ts)}</span> : <span className="badge-warn">Caja abierta</span>}
       </div>
       <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
-        <StatTile label="Recaudo del día" value={cop(efectivo + transf + linea)} sub={`${delDia.length} pago(s)`} />
+        <StatTile label="Recaudo del día" value={cop(efectivo + transf + linea)} sub={delDia.length ? `${delDia.length} pago(s) · ${textoDesglose(desglosePorPeriodo(delDia, facturas))}` : 'Sin pagos'} />
         <StatTile label="Efectivo" value={cop(efectivo)} />
         <StatTile label="Transferencias" value={cop(transf)} />
         <StatTile label="Pagos en línea" value={cop(linea)} sub="desde el portal del usuario" />

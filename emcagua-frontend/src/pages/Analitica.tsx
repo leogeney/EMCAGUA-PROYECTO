@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useData } from '../data/DataContext'
-import { CHART, UMBRAL_ALTO } from '../data/constants'
+import { CHART, cobroFijo, UMBRAL_ALTO } from '../data/constants'
+import { useConfig } from '../data/config'
 import { ubicacion, useZonas } from '../data/zonas'
 import { consumosAtipicos, distribucionConsumo, edadCartera, porSector, porEstrato, serieMensual } from '../data/analytics'
 import { AreaChart, BarList, ChartCard, ColumnChart, Legend } from '../components/charts/charts'
@@ -33,6 +34,13 @@ export default function Analitica() {
   const carteraTotal = cartera.reduce((s, t) => s + t.monto, 0)
   const morosos = base.filter((u) => resumen(u).vencido).length
   const altos = base.filter((u) => resumen(u).consumoActual > UMBRAL_ALTO).length
+  // Modo sin medidores: no hay m³; las gráficas de consumo pasan a mostrar el cobro fijo
+  const conf = useConfig()
+  const sinMed = conf.modoSinMedidores
+  const activos = base.filter((u) => u.estado !== 'Cortado')
+  const fijoMes = activos.reduce((s, u) => s + cobroFijo(u.estrato), 0)
+  const fijoSector = zonas.map((z) => { const us = usuarios.filter((u) => u.sector === z.nombre && u.estado !== 'Cortado'); return { sector: z.nombre, usuarios: us.length, valor: us.reduce((s, u) => s + cobroFijo(u.estrato), 0) } }).sort((a, b) => b.valor - a.valor)
+  const fijoEstrato = [1, 2, 3].map((e) => { const n = activos.filter((u) => Math.min(3, u.estrato) === e).length; return { estrato: e, usuarios: n, tarifa: cobroFijo(e), valor: n * cobroFijo(e) } })
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
@@ -62,12 +70,14 @@ export default function Analitica() {
 
       {/* KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-        <StatTile
+        {sinMed ? (
+          <StatTile label="Cobro fijo esperado" value={copCompacto(fijoMes)} sub={`Se facturará en el próximo cierre · ${activos.length} predio(s) activo(s)`} />
+        ) : <StatTile
           label="Consumo del periodo"
           value={m3(ult.consumo)}
           delta={ant ? { value: ant.consumo ? ult.consumo / ant.consumo - 1 : 0, goodWhenUp: false, label: `vs ${ant.full}` } : undefined}
           sub={`${ult.full} · ${num(ult.consumo / Math.max(1, ult.usuariosConsumo), 1)} m³ por usuario`}
-        />
+        />}
         <StatTile
           label="Facturado"
           value={copCompacto(ult.facturado)}
@@ -84,16 +94,33 @@ export default function Analitica() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
-        <ChartCard
+        {sinMed ? (
+          <ChartCard
+            className="lg:col-span-2"
+            title="Facturado por mes"
+            subtitle="Sin medidores no se mide el consumo: se muestra el valor cobrado cada mes"
+            table={{ columns: ['Periodo', 'Facturado', 'Facturas'], rows: serie.map((p) => [p.full, cop(p.facturado), p.facturas]) }}
+          >
+            <AreaChart data={serie.map((p) => ({ label: p.label, full: p.full, value: p.facturado }))} format={copCompacto} axisFormat={(n) => (n >= 1_000_000 ? `${num(n / 1_000_000, 1)}M` : `${num(n / 1000)}k`)} name="Facturado" height={260} />
+          </ChartCard>
+        ) : <ChartCard
           className="lg:col-span-2"
           title="Consumo total de agua por mes"
           subtitle="Metros cúbicos facturados a suscriptores activos"
           table={{ columns: ['Periodo', 'Consumo (m³)', 'Usuarios', 'Promedio (m³)'], rows: serie.map((p) => [p.full, num(p.consumo), p.usuariosConsumo, num(p.consumo / Math.max(1, p.usuariosConsumo), 1)]) }}
         >
           <AreaChart data={serie.map((p) => ({ label: p.label, full: p.full, value: p.consumo }))} format={m3} axisFormat={(n) => num(n)} name="Consumo" height={260} />
-        </ChartCard>
+        </ChartCard>}
 
-        <ChartCard
+        {sinMed ? (
+          <ChartCard
+            title="Cobro fijo por sector"
+            subtitle="Lo que se factura cada mes en cada sector"
+            table={{ columns: ['Sector', 'Predios', 'Valor mensual'], rows: fijoSector.map((b) => [b.sector, b.usuarios, cop(b.valor)]) }}
+          >
+            <BarList data={fijoSector.map((b) => ({ label: b.sector, value: b.valor, hint: `${b.usuarios} predios`, color: barrio === 'Todos' || barrio === b.sector ? CHART.serie1 : '#c9cec8' }))} format={copCompacto} />
+          </ChartCard>
+        ) : <ChartCard
           title="Consumo promedio por sector"
           subtitle={`Último periodo · tope normal ${UMBRAL_ALTO} m³`}
           table={{ columns: ['Sector', 'Prom. (m³)', 'Usuarios', 'En mora'], rows: barrios.map((b) => [b.sector, num(b.consumoPromedio, 1), b.usuarios, b.morosos]) }}
@@ -103,15 +130,15 @@ export default function Analitica() {
             format={(n) => `${num(n, 1)} m³`}
             max={Math.max(UMBRAL_ALTO, ...barrios.map((b) => b.consumoPromedio))}
           />
-          <p className="text-[11px] text-gray-400 mt-4">El filtro de barrio resalta la barra; el ranking siempre compara los 4 barrios.</p>
-        </ChartCard>
+          <p className="text-[11px] text-gray-400 mt-4">El filtro de sector resalta la barra; el ranking siempre compara todos los sectores.</p>
+        </ChartCard>}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
         <ChartCard
           className="lg:col-span-2"
           title="Facturado vs. recaudado"
-          subtitle="Valor de las facturas de cada periodo según su estado actual"
+          subtitle="Valor de las facturas de cada mes según su estado actual (por mes de la factura, no por día de pago)"
           legend={<Legend items={[{ label: 'Recaudado', color: CHART.serie1 }, { label: 'Pendiente de pago', color: CHART.serie2 }]} />}
           table={{ columns: ['Periodo', 'Facturado', 'Recaudado', 'Pendiente', '% recaudo'], rows: serie.map((p) => [p.full, cop(p.facturado), cop(p.recaudado), cop(p.pendiente), pct(p.facturado ? p.recaudado / p.facturado : 0)]) }}
         >
@@ -141,7 +168,21 @@ export default function Analitica() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
-        <ChartCard
+        {sinMed ? (
+          <ChartCard
+            title="Predios por estrato"
+            subtitle="Cuántos pagan cada valor fijo"
+            table={{ columns: ['Estrato', 'Predios', 'Valor fijo', 'Total mensual'], rows: fijoEstrato.map((e) => [`Estrato ${e.estrato}${e.estrato === 3 ? ' o más' : ''}`, e.usuarios, cop(e.tarifa), cop(e.valor)]) }}
+          >
+            <ColumnChart
+              data={fijoEstrato.map((e) => ({ label: `E${e.estrato}`, full: `Estrato ${e.estrato} · ${cop(e.tarifa)}/mes · ${cop(e.valor)} en total`, values: [e.usuarios], colors: [CHART.serie1] }))}
+              series={[{ name: 'Predios', color: CHART.serie1 }]}
+              format={(n) => num(n)}
+              showTotals
+              height={220}
+            />
+          </ChartCard>
+        ) : <ChartCard
           title="Distribución del consumo"
           subtitle="Usuarios por rango de m³ en el último periodo"
           legend={<Legend items={[{ label: 'Normal', color: CHART.serie1 }, { label: `Alto (> ${UMBRAL_ALTO} m³)`, color: CHART.critico }]} />}
@@ -154,7 +195,7 @@ export default function Analitica() {
             showTotals
             height={220}
           />
-        </ChartCard>
+        </ChartCard>}
 
         <ChartCard
           title="Morosidad por estrato"

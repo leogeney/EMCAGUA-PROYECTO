@@ -4,7 +4,10 @@ import type { CuentaApi } from '../data/api'
 const KEY = 'emcagua_user'
 
 /** Sesión guardada. Con `token` = conectada a la API; sin token = modo demostración (datos del navegador). */
-type Guardada = { username: string; token?: string; cuenta?: CuentaApi }
+type Guardada = { username: string; token?: string; cuenta?: CuentaApi; actividad?: number }
+
+/** Minutos sin usar el sistema tras los que la sesión se cierra sola (computador compartido en la oficina). */
+export const MINUTOS_INACTIVIDAD = 30
 
 function leer(): Guardada | null {
   try {
@@ -19,18 +22,45 @@ export function getUsername(fallback = 'Trabajador'): string {
   return leer()?.username || fallback
 }
 
+/** Segundos de vencimiento del token (campo exp del JWT), o undefined si no se puede leer. */
+function expiraToken(token: string): number | undefined {
+  try { return JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).exp } catch { return undefined }
+}
+
+/** ¿La sesión sigue siendo válida? (token sin vencer y uso reciente). Si no, la cierra. */
+export function sesionVigente(): boolean {
+  const s = leer()
+  if (!s) return false
+  const exp = s.token ? expiraToken(s.token) : undefined
+  const vencida = (exp !== undefined && exp * 1000 <= Date.now()) || (s.actividad !== undefined && Date.now() - s.actividad > MINUTOS_INACTIVIDAD * 60_000)
+  if (vencida) { logout(); return false }
+  return true
+}
+
 export function isLoggedIn() {
+  return sesionVigente()
+}
+
+/** Marca que el funcionario está usando el sistema (reinicia el contador de inactividad). */
+export function registrarActividad() {
+  const s = leer()
+  if (!s) return
+  try { localStorage.setItem(KEY, JSON.stringify({ ...s, actividad: Date.now() })) } catch { /* sin almacenamiento */ }
+}
+
+/** ¿Hay una sesión de funcionario abierta en este navegador? (sin cerrarla) */
+export function haySesionFuncionario() {
   return !!leer()
 }
 
 export function login(username: string, api?: { token: string; cuenta: CuentaApi }) {
-  try { localStorage.setItem(KEY, JSON.stringify({ username, ...api })) } catch { /* sin almacenamiento */ }
+  try { localStorage.setItem(KEY, JSON.stringify({ username, ...api, actividad: Date.now() })) } catch { /* sin almacenamiento */ }
 }
 
 /** Refresca nombre, rol y permisos de la sesión con lo que dice el servidor (si el gerente los cambió). */
 export function actualizarCuentaApi(cuenta: CuentaApi) {
   const s = leer()
-  if (s?.token) login(s.username, { token: s.token, cuenta })
+  if (s?.token) { try { localStorage.setItem(KEY, JSON.stringify({ ...s, cuenta })) } catch { /* sin almacenamiento */ } }
 }
 
 export function logout() {

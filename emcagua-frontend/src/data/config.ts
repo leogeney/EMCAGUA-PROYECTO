@@ -28,6 +28,8 @@ export type Config = {
   cobroFijoEstrato3: number
   /** Modo sin medidores: todos los predios pagan el valor fijo de su estrato (la empresa aún no tiene medidores) */
   modoSinMedidores: boolean
+  /** Segunda carpeta donde se copia cada respaldo de la base de datos */
+  carpetaRespaldoExtra: string
   /** Dirección de internet del sistema (va en los QR). Vacío = la dirección actual del navegador. */
   urlPublica: string
 }
@@ -51,6 +53,7 @@ export const CONFIG_INICIAL: Config = {
   cobroFijoEstrato2: 16000,
   cobroFijoEstrato3: 20000,
   modoSinMedidores: true,
+  carpetaRespaldoExtra: '',
   urlPublica: '',
 }
 

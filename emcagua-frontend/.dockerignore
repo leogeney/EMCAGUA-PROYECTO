@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.vscode/
+.idea/
+Claude outputs/
+ABRIR-EN-VSCODE.bat

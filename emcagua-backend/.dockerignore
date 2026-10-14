@@ -1,0 +1,11 @@
+target/
+*.log
+.idea/
+.vscode/
+*.iml
+docs/
+arranque.log
+scripts/
+INSTALAR-Y-CORRER.bat
+RESTAURAR-COPIA.bat
+reiniciar-base-de-datos.txt

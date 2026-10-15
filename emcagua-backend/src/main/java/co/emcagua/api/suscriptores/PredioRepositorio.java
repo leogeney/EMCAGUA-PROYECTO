@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.rest.core.annotation.RestResource;
 import org.springframework.data.rest.core.annotation.RepositoryRestResource;
 
 @RepositoryRestResource(path = "predios", collectionResourceRel = "predios")
@@ -20,4 +22,9 @@ public interface PredioRepositorio extends JpaRepository<Predio, Long> {
     long countByBarrio(Barrio barrio);
 
     List<Predio> findByEstado(Predio.Estado estado);
+
+    /** Todos los códigos, para asignar el siguiente en orden. */
+    @RestResource(exported = false)
+    @Query("select p.codigo from Predio p")
+    List<String> todosLosCodigos();
 }

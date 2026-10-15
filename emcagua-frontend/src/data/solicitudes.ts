@@ -45,9 +45,11 @@ export function useSolicitudes() {
   return useSyncExternalStore((f) => { oyentes.add(f); return () => { oyentes.delete(f) } }, () => lista)
 }
 
+/** Aprueba y crea el predio; devuelve el código asignado (en orden). */
 export async function aprobarSolicitud(id: number, datos: Record<string, unknown>) {
-  await api(`/vista/solicitudes/${id}/aprobar`, { metodo: 'POST', cuerpo: datos })
+  const r = await api<SolicitudRegistro>(`/vista/solicitudes/${id}/aprobar`, { metodo: 'POST', cuerpo: datos })
   await cargarSolicitudes()
+  return r.predio
 }
 
 export async function rechazarSolicitud(id: number, motivo: string) {

@@ -30,7 +30,7 @@ export function FacturaMediaHoja({ f, u }: { f: Factura; u?: Usuario }) {
         {/* Encabezado */}
         <div className="fmh-head">
           <div className="fmh-marca">
-            <img src="/logo_circulo.png" alt="" />
+            <img src="/logo_emcagua.png" alt="" />
             <div>
               <b>{c.nombre}</b>
               <span className="fmh-sub">{c.razon}</span>
@@ -126,7 +126,7 @@ export function ReciboMediaHoja({ p }: { p: Pago }) {
       <div className="fmh-hoja">
         <div className="fmh-head">
           <div className="fmh-marca">
-            <img src="/logo_circulo.png" alt="" />
+            <img src="/logo_emcagua.png" alt="" />
             <div>
               <b>{c.nombre}</b>
               <span className="fmh-sub">{c.razon}</span>

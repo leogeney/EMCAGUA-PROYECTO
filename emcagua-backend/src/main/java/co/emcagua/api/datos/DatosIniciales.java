@@ -137,7 +137,8 @@ public class DatosIniciales implements ApplicationRunner {
         Map<String, Cuenta> c = crearCuentas(r);
         config.actual();
         crearTarifa();
-        crearMateriales();
+        // El catálogo de inventario lo arma la empresa con sus materiales reales; solo la demostración trae ejemplos
+        if (props.datosDemo()) crearMateriales();
         crearNomina();
         if (props.datosDemo()) crearDemo(c);
         log.info("Listo. Entra con usuario admin y contraseña {} (cámbiala).", CLAVE_DEMO);

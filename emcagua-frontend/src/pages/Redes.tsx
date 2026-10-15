@@ -51,7 +51,7 @@ export default function Redes() {
   const formato = FORMATOS.find((f) => f.id === formatoId)!
 
   useEffect(() => {
-    cargarImagen('/logo_circulo.png').then(setLogo).catch(() => {})
+    cargarImagen('/logo_emcagua.png').then(setLogo).catch(() => {})
     Promise.all([...['500', '600', '700', '800', 'italic 400'].map((p) => document.fonts.load(`${p} 40px Inter`)), document.fonts.load('600 40px Fraunces')]).finally(() => setFuentes(true))
   }, [])
 

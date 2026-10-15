@@ -1,4 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
+import { siguienteCodigo } from './propietarios'
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { COSTO_RECONEXION } from './constants'
 import { facturaId, facturasDe, generacionPeriodo, lecturaMedidor, nombrePeriodo, periodoEnLectura, resumenUsuario, todasLasFacturas, type Resumen } from './billing'
@@ -28,7 +29,8 @@ type DataCtx = {
   /** Vuelve a leer todo de la API (no hace nada en demostración). */
   recargar: () => Promise<void>
   /** Devuelve un mensaje de error o null si se creó. */
-  crearUsuario: (f: UsuarioForm) => Promise<string | null>
+  /** Crea el predio. Sin `id` se le asigna el siguiente código en orden. */
+  crearUsuario: (f: UsuarioForm) => Promise<{ id?: string; error?: string }>
   editarUsuario: (id: string, f: Omit<UsuarioForm, 'id'>) => Promise<void>
   cortar: (id: string) => void
   reactivar: (id: string, pago: DatosPago) => Promise<Pago | null>
@@ -148,14 +150,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const crearUsuario = useCallback(
     async (f: UsuarioForm) => {
-      if (usuarios.some((u) => u.id === f.id)) return `Ya existe un usuario con el ID ${f.id}`
+      if (f.id && usuarios.some((u) => u.id === f.id)) return { error: `Ya existe un usuario con el ID ${f.id}` }
       if (MODO_API) {
-        try { await api('/vista/suscriptores', { metodo: 'POST', cuerpo: f }) } catch (e) { return e instanceof Error ? e.message : String(e) }
+        let id: string
+        try { id = (await api<{ id: string }>('/vista/suscriptores', { metodo: 'POST', cuerpo: f })).id } catch (e) { return { error: e instanceof Error ? e.message : String(e) } }
         await recargar()
-        return null
+        return { id }
       }
-      setUsuarios((prev) => [{ ...f, estado: 'Activo', historial: [] }, ...prev])
-      return null
+      const id = f.id || siguienteCodigo(usuarios)
+      setUsuarios((prev) => [{ ...f, id, medidor: f.medidor || `MED-${id}`, estado: 'Activo', historial: [] }, ...prev])
+      return { id }
     },
     [usuarios, recargar],
   )
@@ -333,7 +337,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 function CargandoDatos() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-[#F4F5F3] text-gray-500">
-      <img src="/logo_circulo.png" alt="" className="h-14 w-14 animate-pulse" />
+      <img src="/logo_emcagua.png" alt="" className="h-14 w-14 animate-pulse" />
       <p className="text-sm">Cargando los datos de la empresa…</p>
     </div>
   )

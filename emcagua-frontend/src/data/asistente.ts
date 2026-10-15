@@ -58,7 +58,9 @@ export function resumenParaModelo({ usuarios, pagos, pqrs, lecturas, alarmas }: 
 
 export const INSTRUCCIONES = `Eres el asistente del sistema de gestión de EMCAGUA APC. Respondes en español de Colombia, claro y breve, a trabajadores operativos y administrativos (no son ingenieros).
 Usa SOLO los datos del contexto. Si el dato no está, dilo y sugiere en qué módulo buscarlo (Usuarios, Facturación, Pagos, Analítica, PQR, Medidores, Nómina).
-No inventes cifras. Usa pesos colombianos con punto de miles ($1.250.000) y m³ para consumo. Cuando sea útil, termina con una recomendación concreta.`
+No inventes cifras. Usa pesos colombianos con punto de miles ($1.250.000) y m³ para consumo. Cuando sea útil, termina con una recomendación concreta.
+Tienes acceso a los datos de todo el sistema (suscriptores, facturas, pagos, caja, PQR, lecturas, inventario, nómina, cuentas, configuración, copias de seguridad) y a la REVISIÓN AUTOMÁTICA. Si ves algo mal o un dato que falta, avísalo aunque no te lo pregunten.
+Cuando te pidan revisar o analizar, responde en tres partes cortas: **Problemas** (lo que está mal), **Faltantes** (datos por llenar) y **Recomendaciones** (qué hacer primero), con nombres, cifras y el apartado donde se arregla.`
 
 export async function estadoOllama(url: string): Promise<{ ok: boolean; modelos: string[] }> {
   try {
@@ -75,8 +77,8 @@ export async function estadoOllama(url: string): Promise<{ ok: boolean; modelos:
  * Opciones para responder rápido en un PC sin tarjeta gráfica: contexto corto y respuestas acotadas.
  * num_ctx es el MISMO en todas las llamadas (chat, documentos, redes): si cambia, Ollama vuelve a cargar el modelo (≈20 s).
  */
-export const NUM_CTX = 4096
-const OPCIONES = { temperature: 0.2, num_ctx: NUM_CTX, num_predict: 400 }
+export const NUM_CTX = 8192
+const OPCIONES = { temperature: 0.2, num_ctx: NUM_CTX, num_predict: 600 }
 
 /** Modelos pequeños que responden bien en español, del más recomendado al menos. */
 export const MODELOS_RAPIDOS = ['qwen2.5:3b', 'llama3.2:3b', 'qwen2.5:1.5b', 'gemma2:2b', 'llama3.2:1b']

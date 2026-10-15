@@ -18,6 +18,9 @@ import { otrosPredios } from '../data/propietarios'
 import { codigoDocumento, urlVerificacion, useRegistroDocs } from '../data/verificacion'
 import Qr from '../components/Qr'
 import { mensajeError } from '../data/api'
+import { useConfig } from '../data/config'
+import type { Empleado } from '../data/nomina'
+import type { Pqr, Usuario } from '../data/types'
 
 const D = {
   back: 'M10 19l-7-7m0 0l7-7m-7 7h18',
@@ -111,6 +114,7 @@ function Editor({ p, onVolver }: { p: Plantilla; onVolver: () => void }) {
   const { empleados, parametros, periodos, obtenerPeriodo } = useNomina()
   const { pqrs } = usePqr()
   const { siguiente, emitir } = useDocumentos()
+  const conf = useConfig()
   const toast = useToast()
   const [hoy] = useState(() => new Date())
 
@@ -139,10 +143,16 @@ function Editor({ p, onVolver }: { p: Plantilla; onVolver: () => void }) {
   const [emitido, setEmitido] = useState<Emitido | null>(null)
 
 
-  const u = p.sujeto === 'suscriptor' ? usuarios.find((x) => x.id === sujeto) : undefined
-  const e = p.sujeto === 'empleado' ? empleados.find((x) => x.id === sujeto) : undefined
-  const pqr = p.sujeto === 'pqr' ? pqrs.find((x) => x.radicado === sujeto) : undefined
-  const gerente = empleados.find((x) => x.cargo === 'Gerente') ?? empleados[0]
+  // Sin datos reales la hoja se muestra igual, con espacios [entre corchetes], para ver cómo queda
+  const uReal = p.sujeto === 'suscriptor' ? usuarios.find((x) => x.id === sujeto) : undefined
+  const eReal = p.sujeto === 'empleado' ? empleados.find((x) => x.id === sujeto) : undefined
+  const pqrReal = p.sujeto === 'pqr' ? pqrs.find((x) => x.radicado === sujeto) : undefined
+  const ejemplo = p.sujeto !== 'ninguno' && !uReal && !eReal && !pqrReal
+  const u = uReal ?? (ejemplo && p.sujeto === 'suscriptor' ? EJ_SUSCRIPTOR : undefined)
+  const e = eReal ?? (ejemplo && p.sujeto === 'empleado' ? { ...EJ_EMPLEADO, salario: parametros.smmlv, fechaIngreso: `${hoy.getFullYear()}-01-01` } : undefined)
+  const pqr = pqrReal ?? (ejemplo && p.sujeto === 'pqr' ? { ...EJ_PQR, radicadaEn: hoy.getTime(), vence: hoy.getTime() + 15 * 864e5 } : undefined)
+  // Sin empleados registrados la firma sale con el gerente de Configuración (antes la hoja se rompía)
+  const gerente: Empleado = empleados.find((x) => x.cargo === 'Gerente' && x.activo) ?? ({ id: '', nombre: conf.gerente || 'Gerente', cargo: 'Gerente' } as Empleado)
 
   let liq
   if (p.id === 'desprendible' && e) {
@@ -152,8 +162,9 @@ function Editor({ p, onVolver }: { p: Plantilla; onVolver: () => void }) {
   }
   const datos: Datos = { v, hoy, gerente, u, r: u ? resumen(u) : undefined, predios: u ? [u, ...otrosPredios(usuarios, u)].map((x) => ({ u: x, r: resumen(x) })) : undefined, e, liq, pqr, empleados }
   const listo = (p.sujeto === 'ninguno' || u || e || pqr) && (p.id !== 'desprendible' || liq)
-  const bloqueo = listo ? p.bloqueo?.(datos) ?? null : null
-  const generado = listo ? p.generar(datos) : null
+  const bloqueo = !listo || ejemplo ? null : p.bloqueo?.(datos) ?? null
+  let generado = null
+  try { generado = listo ? p.generar(datos) : null } catch { generado = null }
   const b: Borrador | null = generado ? { ...generado, cuerpo: cuerpo ?? generado.cuerpo } : null
   const consecutivo = emitido?.consecutivo ?? siguiente(p.prefijo)
 
@@ -206,6 +217,11 @@ function Editor({ p, onVolver }: { p: Plantilla; onVolver: () => void }) {
     }
   }
 
+  const vacio = p.sujeto === 'suscriptor' && !suscriptores.length ? { texto: 'Todavía no hay suscriptores registrados. Este documento necesita uno.', label: 'Registrar suscriptor', to: '/usuarios' }
+    : p.sujeto === 'empleado' && !activos.length ? { texto: 'Todavía no hay empleados activos en Nómina. Este documento necesita uno.', label: 'Registrar empleado', to: '/nomina' }
+    : p.sujeto === 'pqr' && !pqrs.length ? { texto: 'Todavía no hay PQR radicadas. Este documento responde una PQR.', label: 'Ir a PQR', to: '/pqr' }
+    : p.id === 'desprendible' && e && !liq ? { texto: 'Ese empleado no tiene nómina liquidada para el periodo elegido.', label: 'Ir a Nómina', to: '/nomina' }
+    : null
   const lista = p.sujeto === 'suscriptor' ? suscriptores.filter((x) => !filtro || `${x.nombre} ${x.id} ${x.medidor} ${x.cedula} ${x.direccion}`.toLowerCase().includes(filtro.toLowerCase())) : []
 
   return (
@@ -254,7 +270,9 @@ function Editor({ p, onVolver }: { p: Plantilla; onVolver: () => void }) {
             const ops = opcionesDe(c.k)
             return (
               <div key={c.k}>
-                <label className="field-label">{c.label}</label>
+                <div className="flex items-center justify-between gap-2">
+                  <label className="field-label">{c.label}</label>
+                </div>
                 {c.tipo === 'textarea' ? (
                   <textarea value={v[c.k] ?? ''} onChange={(x) => cambiarCampo(c.k, x.target.value)} placeholder={c.placeholder} rows={3} className="field py-2.5 h-auto text-sm" />
                 ) : c.tipo === 'select' ? (
@@ -299,14 +317,20 @@ function Editor({ p, onVolver }: { p: Plantilla; onVolver: () => void }) {
         <div className="no-print flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-gray-500">{emitido ? <>Emitido como <b className="font-mono text-dark">{emitido.consecutivo}</b></> : <>Vista previa · se emitirá como <span className="font-mono">{consecutivo}</span></>}</p>
           <div className="flex gap-2">
-            <button disabled={!b || !!bloqueo} onClick={word} className="btn-secondary h-10"><Ico d={D.word} /> Word</button>
-            <button disabled={!b || !!bloqueo} onClick={imprimir} className="btn bg-dark text-white hover:bg-black disabled:opacity-40 h-10"><Ico d={D.print} /> Imprimir / PDF</button>
+            <button disabled={!b || !!bloqueo || ejemplo} onClick={word} className="btn-secondary h-10"><Ico d={D.word} /> Word</button>
+            <button disabled={!b || !!bloqueo || ejemplo} onClick={imprimir} className="btn bg-dark text-white hover:bg-black disabled:opacity-40 h-10"><Ico d={D.print} /> Imprimir / PDF</button>
           </div>
         </div>
         {bloqueo && (
           <div className="no-print rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-800 flex items-start gap-2"><Ico d={D.warn} className="w-4 h-4 shrink-0 mt-0.5" />{bloqueo}</div>
         )}
-        {b && <Hoja b={b} consecutivo={consecutivo} fecha={hoy} formato={p.formato} atenuado={!!bloqueo} verif={{ url: urlVerificacion(consecutivo, codigoPrevio), codigo: codigoPrevio }} />}
+        {ejemplo && vacio && (
+          <div className="no-print rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span className="flex-1 min-w-0">Vista de ejemplo. {vacio.texto}</span>
+            <Link to={vacio.to} className="font-semibold text-amber-900 hover:underline">{vacio.label} →</Link>
+          </div>
+        )}
+        {b && <Hoja b={b} consecutivo={consecutivo} fecha={hoy} formato={p.formato} atenuado={!!bloqueo || ejemplo} verif={{ url: urlVerificacion(consecutivo, codigoPrevio), codigo: codigoPrevio }} />}
       </div>
     </div>
   )
@@ -322,7 +346,7 @@ function Hoja({ b, consecutivo, fecha: f, formato, atenuado, verif, anulado }: {
     <article className={`print-area relative bg-white rounded-2xl border border-gray-100 shadow-sm px-8 sm:px-14 py-10 text-[13.5px] text-gray-800 leading-relaxed ${atenuado ? 'opacity-40' : ''}`}>
       {anulado && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><span className="-rotate-[24deg] border-[6px] border-red-600/70 text-red-600/70 text-6xl font-black tracking-[0.2em] px-6 py-2 rounded-xl">ANULADO</span></div>}
       <header className="flex items-center gap-3 pb-3 border-b-2 border-secondary">
-        <img src="/logo_circulo.png" alt="" className="h-12 w-12 object-contain" />
+        <img src="/logo_emcagua.png" alt="" className="h-12 w-12 object-contain" />
         <div>
           <p className="text-lg font-extrabold text-secondary leading-none">{EMPRESA.nombre}</p>
           <p className="text-[10.5px] text-gray-500 mt-1">{EMPRESA.razon}</p>
@@ -462,3 +486,8 @@ function Emitidos({ onNuevo }: { onNuevo: () => void }) {
   )
 }
 
+
+/* Datos de ejemplo para ver la hoja cuando aún no hay suscriptores, empleados o PQR */
+const EJ_SUSCRIPTOR: Usuario = { id: '[Código]', nombre: '[Nombre del suscriptor]', cedula: '[Cédula]', direccion: '[Dirección]', sector: '[Sector]', barrio: '', estrato: 1, medidor: '', conMedidor: false, telefono: '', estado: 'Activo', historial: [] }
+const EJ_EMPLEADO: Empleado = { id: 'ejemplo', nombre: '[Nombre del empleado]', cedula: '[Cédula]', cargo: '[Cargo]', area: 'Administrativa', salario: 0, fechaIngreso: '', contrato: 'Indefinido', riesgoArl: 1, eps: '[EPS]', pension: '[Fondo de pensión]', diasVacacionesDisfrutados: 0, activo: true }
+const EJ_PQR: Pqr = { radicado: '[Radicado]', tipo: 'Petición', categoria: 'Otro', canal: 'Presencial', nombre: '[Nombre del peticionario]', telefono: '', barrio: '[Sector]', descripcion: '[Descripción de la PQR]', estado: 'Radicada', radicadaEn: 0, vence: 0, historial: [] }

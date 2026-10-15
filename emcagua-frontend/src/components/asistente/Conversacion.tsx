@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { useAsistente } from '../../data/AsistenteContext'
 import Ico from '../ui/Icon'
 
@@ -8,16 +8,34 @@ const D = {
   spark: 'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z',
 }
 
-/** Cara de Gotita, la mascota de EMCAGUA, para el asistente. */
-export function Gotita({ className = 'w-8 h-8' }: { className?: string }) {
+/**
+ * Ícono de Gotita, el asistente de EMCAGUA: gota con barras de voz (un asistente que responde).
+ * `soloVoz` dibuja solo las barras, en blanco, para ir sobre un fondo de color (botón flotante).
+ */
+export function Gotita({ className = 'w-8 h-8', soloVoz = false }: { className?: string; soloVoz?: boolean }) {
+  const id = useId().replace(/:/g, '')
+  if (soloVoz) {
+    return (
+      <svg viewBox="0 0 120 120" className={className} aria-hidden="true">
+        <g fill="#fff"><rect x="24" y="48" width="12" height="24" rx="6" /><rect x="44" y="30" width="12" height="60" rx="6" /><rect x="64" y="20" width="12" height="80" rx="6" /><rect x="84" y="40" width="12" height="40" rx="6" fill="#B9E36B" /></g>
+      </svg>
+    )
+  }
   return (
-    <svg viewBox="0 0 120 130" className={className} aria-hidden="true">
-      <path d="M60 4 C76 30 104 52 104 82 A44 44 0 1 1 16 82 C16 52 44 30 60 4Z" fill="#38BDF8" />
-      <path d="M36 70 C36 52 44 40 52 30" stroke="#fff" strokeWidth="7" fill="none" strokeLinecap="round" opacity=".55" />
-      <ellipse cx="46" cy="80" rx="6" ry="8" fill="#1F2937" /><ellipse cx="74" cy="80" rx="6" ry="8" fill="#1F2937" />
-      <circle cx="48" cy="77" r="2.2" fill="#fff" /><circle cx="76" cy="77" r="2.2" fill="#fff" />
-      <path d="M48 98 Q60 108 72 98" stroke="#1F2937" strokeWidth="4" fill="none" strokeLinecap="round" />
-      <circle cx="34" cy="94" r="6" fill="#FB7185" opacity=".45" /><circle cx="86" cy="94" r="6" fill="#FB7185" opacity=".45" />
+    <svg viewBox="-4 0 128 126" className={className} aria-hidden="true">
+      <defs>
+        <linearGradient id={`g${id}`} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#0EA5A4" />
+          <stop offset="1" stopColor="#155E75" />
+        </linearGradient>
+      </defs>
+      <path d="M60 6 C78 34 102 56 102 80 A42 42 0 1 1 18 80 C18 56 42 34 60 6Z" fill={`url(#g${id})`} />
+      <g fill="#fff">
+        <rect x="38" y="72" width="7" height="16" rx="3.5" />
+        <rect x="50" y="62" width="7" height="36" rx="3.5" />
+        <rect x="62" y="56" width="7" height="48" rx="3.5" />
+        <rect x="74" y="66" width="7" height="28" rx="3.5" fill="#B9E36B" />
+      </g>
     </svg>
   )
 }

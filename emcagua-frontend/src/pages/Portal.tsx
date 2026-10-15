@@ -405,7 +405,7 @@ function FacturaPortal({ f, u, onClose, onPagar }: { f: Factura; u: Usuario; onC
       <div className="print-area px-6 py-5">
         <div className="flex items-start justify-between gap-4 pb-4 border-b-2 border-secondary">
           <div className="flex gap-3">
-            <img src="/logo_circulo.png" alt="" className="h-14 w-14 object-contain" />
+            <img src="/logo_emcagua.png" alt="" className="h-14 w-14 object-contain" />
             <div>
               <p className="text-sm font-extrabold text-dark leading-none">{c.nombre}</p>
               <p className="text-[11px] text-gray-500 mt-1 leading-snug max-w-xs">{c.razon}</p>

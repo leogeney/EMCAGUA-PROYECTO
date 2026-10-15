@@ -127,8 +127,8 @@ export default function AsistenteFlotante() {
         </button>
       )}
 
-      <button onClick={() => (abierto ? setAbierto(false) : abrir())} className="fixed z-40 bottom-6 right-6 h-16 w-16 rounded-full bg-white shadow-xl border border-gray-100 flex items-center justify-center hover:scale-105 transition-transform" title="Gotita, tu asistente (Ctrl + K)" aria-label="Abrir asistente">
-        <Gotita className="w-10 h-10" />
+      <button onClick={() => (abierto ? setAbierto(false) : abrir())} className="fixed z-40 bottom-6 right-6 h-16 w-16 rounded-full bg-gradient-to-br from-[#0EA5A4] to-[#155E75] shadow-xl shadow-[#155E75]/40 ring-4 ring-white flex items-center justify-center hover:scale-105 transition-transform" title="Gotita, tu asistente (Ctrl + K)" aria-label="Abrir asistente">
+        <Gotita soloVoz className="w-9 h-9" />
         {urgentes > 0 && !abierto && <span className="absolute -top-1 -right-1 h-6 min-w-6 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center border-2 border-white">{urgentes}</span>}
       </button>
     </div>

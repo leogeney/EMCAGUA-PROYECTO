@@ -34,6 +34,9 @@ export const setMacromediciones = (lista: { anio: number; mes: number; sector: s
   MACRO = new Map(lista.map((m) => [`${m.anio}-${m.mes}|${m.sector}`, m.volumen]))
 }
 
+/** ¿Hay agua producida registrada en la base de datos? (si no, las pérdidas son un estimado) */
+export const hayMacromediciones = () => !!MACRO && MACRO.size > 0
+
 /** Agua producida por sector: la medida en la base de datos o, si no hay, un estimado (ruido y una mejora lenta mes a mes). */
 function producidoPorBarrio(fact: Record<string, { m3: number }>, mes: number, anio: number) {
   const idx = anio * 12 + mes

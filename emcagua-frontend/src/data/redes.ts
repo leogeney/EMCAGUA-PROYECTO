@@ -363,7 +363,6 @@ function dibujarVibrante(ctx: CanvasRenderingContext2D, o: Opciones) {
   let y = m
   const tamLogo = 92 * u
   if (o.logo) {
-    ctx.save(); ctx.beginPath(); ctx.arc(m + tamLogo / 2, y + tamLogo / 2, tamLogo / 2 + 6 * u, 0, Math.PI * 2); ctx.fillStyle = '#FFFFFF'; ctx.fill(); ctx.restore()
     const r = Math.min(tamLogo / o.logo.width, tamLogo / o.logo.height)
     ctx.drawImage(o.logo, m + (tamLogo - o.logo.width * r) / 2, y + (tamLogo - o.logo.height * r) / 2, o.logo.width * r, o.logo.height * r)
   }
@@ -506,8 +505,6 @@ function marca(ctx: CanvasRenderingContext2D, o: Opciones, x: number, y: number,
   const t = 66 * u
   if (o.logo) {
     ctx.save()
-    ctx.beginPath(); ctx.arc(x + t / 2, y + t / 2, t / 2 + 4 * u, 0, Math.PI * 2); ctx.fillStyle = '#FFFFFF'; ctx.fill()
-    ctx.lineWidth = 2 * u; ctx.strokeStyle = 'rgba(0,0,0,0.06)'; ctx.stroke()
     const r = Math.min(t / o.logo.width, t / o.logo.height)
     ctx.drawImage(o.logo, x + (t - o.logo.width * r) / 2, y + (t - o.logo.height * r) / 2, o.logo.width * r, o.logo.height * r)
     ctx.restore()

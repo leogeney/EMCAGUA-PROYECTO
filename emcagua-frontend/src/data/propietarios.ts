@@ -39,3 +39,9 @@ export function saldoPropietario(predios: Usuario[], resumen: (u: Usuario) => Re
 
 /** Nombre corto del predio para listas: "Calle 5 # 4-20 (Centro)". */
 export const etiquetaPredio = (u: Usuario) => `${u.direccion || `Predio ${u.id}`} (${ubicacion(u)})`
+
+/** Siguiente código de suscriptor en orden: el mayor código numérico + 1 (el primero es 1000). */
+export function siguienteCodigo(usuarios: { id: string }[]) {
+  const nums = usuarios.map((u) => (/^\d{1,15}$/.test(u.id) ? Number(u.id) : NaN)).filter((n) => Number.isFinite(n))
+  return String(Math.max(999, ...nums) + 1)
+}

@@ -107,7 +107,7 @@ export default function Configuracion() {
             <p className="field-label">Así sale el membrete</p>
             <div className="rounded-xl border border-gray-100 p-4">
               <div className="flex items-center gap-3 pb-3 border-b-2 border-secondary">
-                <img src="/logo_circulo.png" alt="" className="h-11 w-11 object-contain" />
+                <img src="/logo_emcagua.png" alt="" className="h-11 w-11 object-contain" />
                 <div className="min-w-0">
                   <p className="font-extrabold text-secondary leading-none">{c.nombre || '—'}</p>
                   <p className="text-[10px] text-gray-500 mt-1 leading-snug">{c.razon}</p>

@@ -6,16 +6,13 @@ import { aprobarSolicitud, rechazarSolicitud, type SolicitudRegistro } from '../
 import { barriosDe, sectores, useZonas } from '../data/zonas'
 import { cobroFijo } from '../data/constants'
 import type { Usuario } from '../data/types'
+import { siguienteCodigo } from '../data/propietarios'
 import { cop, fecha, hora } from '../utils/format'
 
 const PERSONA = 'M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z'
 const mensaje = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 /** Siguiente código libre: el mayor código numérico + 1 (mínimo 1000). */
-function siguienteCodigo(usuarios: Usuario[]) {
-  const nums = usuarios.map((u) => Number(u.id)).filter((n) => Number.isFinite(n))
-  return String(Math.max(999, ...nums) + 1)
-}
 
 /** Aviso en Usuarios con las personas que se registraron solas en la oficina virtual. */
 export function AvisoSolicitudes({ solicitudes, onAbrir }: { solicitudes: SolicitudRegistro[]; onAbrir: () => void }) {
@@ -82,12 +79,12 @@ function Revisar({ s, usuarios, onVolver, onListo }: { s: SolicitudRegistro; usu
   const dueno = usuarios.find((u) => u.cedula.replace(/\D/g, '') === s.cedula)
 
   const aprobar = async () => {
-    if (!/^\d{3,10}$/.test(f.id)) return toast('Código inválido', 'El código del predio debe tener solo números (3 a 10 dígitos).', 'warning')
     setOcupado(true)
     try {
-      await aprobarSolicitud(s.id, { ...f, medidor: f.conMedidor ? f.medidor : '' })
-      toast('Solicitud aprobada', `Se creó el predio ${f.id}. ${s.nombre} ya puede entrar a la oficina virtual con su cédula y contraseña.`)
-      onListo(f.id)
+      // El código lo asigna el servidor en orden (por si otro funcionario creó un predio mientras tanto)
+      const codigo = (await aprobarSolicitud(s.id, { ...f, id: '', medidor: f.conMedidor ? f.medidor : '' })) || sugerido
+      toast('Solicitud aprobada', `Se creó el predio ${codigo}. ${s.nombre} ya puede entrar a la oficina virtual con su cédula y contraseña.`)
+      onListo(codigo)
     } catch (e) { toast('No se aprobó', mensaje(e), 'warning') } finally { setOcupado(false) }
   }
   const rechazar = async () => {
@@ -101,7 +98,7 @@ function Revisar({ s, usuarios, onVolver, onListo }: { s: SolicitudRegistro; usu
       footer={rechazo === null ? <>
         <button onClick={onVolver} className="btn-secondary">Volver</button>
         <button disabled={ocupado} onClick={() => setRechazo('')} className="btn-secondary text-red-600 border-red-200 hover:bg-red-50">Rechazar</button>
-        <button disabled={ocupado} onClick={() => void aprobar()} className="btn-primary flex-1">{ocupado ? 'Creando…' : `Aprobar y crear predio ${f.id}`}</button>
+        <button disabled={ocupado} onClick={() => void aprobar()} className="btn-primary flex-1">{ocupado ? 'Creando…' : `Aprobar y crear predio ${sugerido}`}</button>
       </> : <>
         <button onClick={() => setRechazo(null)} className="btn-secondary">Cancelar</button>
         <button disabled={ocupado} onClick={() => void rechazar()} className="btn flex-1 bg-red-600 text-white hover:bg-red-700">Confirmar rechazo</button>
@@ -123,7 +120,7 @@ function Revisar({ s, usuarios, onVolver, onListo }: { s: SolicitudRegistro; usu
           <>
             <p className="text-sm text-gray-600">Revisa y corrige si hace falta (por ejemplo, el estrato real o el barrio). Al aprobar se crea el predio y la persona queda con su cuenta de la oficina virtual.</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div><label className="field-label">Código del predio</label><input value={f.id} onChange={(e) => set('id', e.target.value.replace(/\D/g, ''))} className="field tabular-nums" /><p className="text-[11px] text-gray-400 mt-1">Sugerido: el siguiente libre ({sugerido}).</p></div>
+              <div><label className="field-label">Código del predio</label><input value={sugerido} readOnly className="field tabular-nums bg-gray-soft text-gray-500 cursor-not-allowed" /><p className="text-[11px] text-gray-400 mt-1">Automático, en orden.</p></div>
               <div><label className="field-label">Nombre completo</label><input value={f.nombre} onChange={(e) => set('nombre', e.target.value)} className="field" /></div>
               <div><label className="field-label">Cédula</label><input value={f.cedula} onChange={(e) => set('cedula', e.target.value.replace(/\D/g, ''))} className="field tabular-nums" /></div>
               <div><label className="field-label">Celular</label><input value={f.telefono} onChange={(e) => set('telefono', e.target.value.replace(/\D/g, '').slice(0, 10))} className="field tabular-nums" /></div>

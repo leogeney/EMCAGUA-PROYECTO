@@ -7,6 +7,15 @@ import { useData } from './DataContext'
 import { usePqr } from './PqrContext'
 import { useOperacion } from './OperacionContext'
 import { recomendacionesComoTexto, useRecomendaciones } from './recomendaciones'
+import { useNomina } from './NominaContext'
+import { useDocumentos } from './DocumentosContext'
+import { useConfig } from './config'
+import { useCuentas } from './cuentas'
+import { useZonas } from './zonas'
+import { useSolicitudes } from './solicitudes'
+import { useRespaldos } from './respaldos'
+import { hallazgosComoTexto, useRevision } from './revision'
+import { contextoAmpliado } from './contextoIA'
 import { calentarOllama, destinoNavegacion, estadoOllama, modeloPreferido, preguntarOllamaStream, respuestaRapida, responderSinIA, resumenParaModelo, type Mensaje } from './asistente'
 
 const leer = (k: string, d: string) => { try { return localStorage.getItem(k) ?? d } catch { return d } }
@@ -57,7 +66,15 @@ const C = createContext<Ctx | null>(null)
 export function AsistenteProvider({ children }: { children: ReactNode }) {
   const { usuarios, pagos, lecturas, alarmas } = useData()
   const { pqrs } = usePqr()
-  const { materiales } = useOperacion()
+  const { materiales, egresos, cierres } = useOperacion()
+  const { empleados, parametros, periodos } = useNomina()
+  const { emitidos } = useDocumentos()
+  const conf = useConfig()
+  const { cuentas, roles } = useCuentas()
+  const zonas = useZonas()
+  const solicitudes = useSolicitudes()
+  const respaldos = useRespaldos()
+  const hallazgos = useRevision()
   const navigate = useNavigate()
   const [usuario, setUsuario] = useState(() => getUsername(''))
   const [chats, setChats] = useState<Chat[]>(() => (MODO_API ? [] : cargarChats(getUsername(''))))
@@ -172,7 +189,10 @@ export function AsistenteProvider({ children }: { children: ReactNode }) {
     }
     // 2. Respuesta instantánea con los datos
     const pideConsejo = /recomiend|recomendac|consej|sugier|sugerenc|que deberia|que me aconsej|que mejor/.test(p.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
-    const consejo = pideConsejo ? (recos.length ? `**Te recomiendo, en este orden:**\n${recomendacionesComoTexto(recos)}\n\nEn **Mi día** tienes cada una con el botón para hacerla.` : 'Revisé todo y no veo nada que mejorar ahora mismo. 👍') : null
+    const consejo = pideConsejo ? ([
+      hallazgos.length ? `**Lo que encontré revisando el sistema:**\n${hallazgosComoTexto(hallazgos, 6)}` : '',
+      recos.length ? `**Te recomiendo, en este orden:**\n${recomendacionesComoTexto(recos)}\n\nEn **Mi día** tienes cada una con el botón para hacerla.` : '',
+    ].filter(Boolean).join('\n\n') || 'Revisé todo y no veo nada que mejorar ahora mismo. 👍') : null
     const rapida = conIA ? null : consejo ?? respuestaRapida(p, ctx)
     const usarIA = !!(ia?.ok && modelo)
     if (rapida || !usarIA) {
@@ -185,7 +205,7 @@ export function AsistenteProvider({ children }: { children: ReactNode }) {
     const base = [...historial, { rol: 'asistente' as const, texto: '', fuente: 'ollama' as const, escribiendo: true }]
     setMensajes(base)
     try {
-      const final = await preguntarOllamaStream(url, modelo, historial, `${resumenParaModelo(ctx, p)}\n\nRECOMENDACIONES QUE EL SISTEMA YA DETECTÓ (úsalas si vienen al caso):\n${recomendacionesComoTexto(recos, 3).replace(/\*\*/g, '')}`, (parcial) => setMensajes([...historial, { rol: 'asistente', texto: parcial, fuente: 'ollama', escribiendo: true }]), control.current.signal)
+      const final = await preguntarOllamaStream(url, modelo, historial, `${resumenParaModelo(ctx, p)}\n${contextoAmpliado(p, { modulo: pathname.split('/')[1] || 'mi-dia', conf, usuarios, pagos, materiales, egresos, cierres, empleados, parametros, periodos, cuentas, roles, zonas, solicitudes, respaldos, emitidos, hallazgos })}\n\nRECOMENDACIONES QUE EL SISTEMA YA DETECTÓ (úsalas si vienen al caso):\n${recomendacionesComoTexto(recos, 3).replace(/\*\*/g, '')}`, (parcial) => setMensajes([...historial, { rol: 'asistente', texto: parcial, fuente: 'ollama', escribiendo: true }]), control.current.signal)
       setMensajes([...historial, { rol: 'asistente', texto: final, fuente: 'ollama' }])
     } catch (e) {
       const cancelado = e instanceof DOMException && e.name === 'AbortError'
@@ -198,7 +218,7 @@ export function AsistenteProvider({ children }: { children: ReactNode }) {
       setPensando(false)
       control.current = null
     }
-  }, [mensajes, pensando, usuarios, pagos, pqrs, lecturas, alarmas, materiales, ia, modelo, url, navigate, recos, activaId, chats])
+  }, [mensajes, pensando, usuarios, pagos, pqrs, lecturas, alarmas, materiales, ia, modelo, url, navigate, recos, activaId, chats, pathname, conf, egresos, cierres, empleados, parametros, periodos, cuentas, roles, zonas, solicitudes, respaldos, emitidos, hallazgos])
 
   const detener = useCallback(() => control.current?.abort(), [])
   const nuevoChat = useCallback(() => { control.current?.abort(); setActivaId(null) }, [])

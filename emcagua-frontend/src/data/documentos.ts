@@ -100,23 +100,26 @@ function tablaDeuda(r: Resumen): Tabla {
   }
 }
 
+/** Final de los certificados: "con destino a …" solo si se escribió un destino. */
+const conDestino = (destino?: string) => (destino?.trim() ? `, con destino a ${destino.trim()}` : '')
+
 export const PLANTILLAS: Plantilla[] = [
   /* ---------------------------- Suscriptores ---------------------------- */
   {
     id: 'paz-salvo', nombre: 'Paz y salvo', descripcion: 'Certifica que el suscriptor no tiene deudas con la empresa.', grupo: 'Suscriptores', prefijo: 'PS', formato: 'certificado', sujeto: 'suscriptor',
-    campos: [{ k: 'destino', label: 'Con destino a', placeholder: 'Ej: Notaría, venta del inmueble, banco', def: 'quien interese' }],
+    campos: [{ k: 'destino', label: 'Con destino a', placeholder: 'Ej: Notaría, venta del inmueble, banco' }],
     bloqueo: (d) => (d.r && d.r.deuda > 0 ? `${d.u!.nombre} debe ${cop(d.r.deuda)}. No se puede expedir paz y salvo: genera un aviso de cobro o un acuerdo de pago.` : null),
     generar: (d) => ({
       titulo: 'PAZ Y SALVO',
       asunto: `Paz y salvo — ${d.u!.nombre}`,
-      cuerpo: `La suscrita gerencia de ${EMPRESA.nombre}\n\nCERTIFICA:\n\nQue el(la) señor(a) ${d.u!.nombre.toUpperCase()}${cc(d.u!)}, suscriptor(a) No. ${d.u!.id}, del predio ubicado en ${predio(d.u!)}, estrato ${d.u!.estrato}, con medidor ${d.u!.medidor}, se encuentra a PAZ Y SALVO por concepto de los servicios de acueducto y alcantarillado hasta el periodo de ${ultimoPeriodo(d.u!)}.\n\nSe expide a solicitud del interesado, con destino a ${d.v.destino || 'quien interese'}, en ${EMPRESA.ciudad}, a los ${fechaLarga(d.hoy)}.`,
+      cuerpo: `La suscrita gerencia de ${EMPRESA.nombre}\n\nCERTIFICA:\n\nQue el(la) señor(a) ${d.u!.nombre.toUpperCase()}${cc(d.u!)}, suscriptor(a) No. ${d.u!.id}, del predio ubicado en ${predio(d.u!)}, estrato ${d.u!.estrato}, con medidor ${d.u!.medidor}, se encuentra a PAZ Y SALVO por concepto de los servicios de acueducto y alcantarillado hasta el periodo de ${ultimoPeriodo(d.u!)}.\n\nSe expide a solicitud del interesado${conDestino(d.v.destino)}, en ${EMPRESA.ciudad}, a los ${fechaLarga(d.hoy)}.`,
       firmas: [firmaGerente(d)],
     }),
     guiaIA: 'un certificado de paz y salvo de servicios públicos',
   },
   {
     id: 'paz-salvo-propietario', nombre: 'Paz y salvo del propietario', descripcion: 'Para quien tiene varias casas: certifica que no debe en ninguno de sus predios.', grupo: 'Suscriptores', prefijo: 'PSP', formato: 'certificado', sujeto: 'suscriptor',
-    campos: [{ k: 'destino', label: 'Con destino a', placeholder: 'Ej: Notaría, banco', def: 'quien interese' }],
+    campos: [{ k: 'destino', label: 'Con destino a', placeholder: 'Ej: Notaría, banco' }],
     bloqueo: (d) => {
       const deben = (d.predios ?? []).filter((x) => x.r.deuda > 0)
       return deben.length ? `${d.u!.nombre} debe en ${deben.length} predio(s): ${deben.map((x) => `${x.u.direccion || x.u.id} (${cop(x.r.deuda)})`).join(', ')}. No se puede expedir paz y salvo general.` : null
@@ -126,7 +129,7 @@ export const PLANTILLAS: Plantilla[] = [
       return {
         titulo: 'PAZ Y SALVO',
         asunto: `Paz y salvo general — ${d.u!.nombre}`,
-        cuerpo: `La suscrita gerencia de ${EMPRESA.nombre}\n\nCERTIFICA:\n\nQue el(la) señor(a) ${d.u!.nombre.toUpperCase()}${cc(d.u!)}, propietario(a) de ${ps.length === 1 ? 'un (1) predio' : `${ps.length} predios`} con servicio de acueducto y alcantarillado, se encuentra a PAZ Y SALVO por todo concepto${ps.length > 1 ? ' en cada uno de ellos' : ''}.\n\nSe expide a solicitud del interesado, con destino a ${d.v.destino || 'quien interese'}, en ${EMPRESA.ciudad}, a los ${fechaLarga(d.hoy)}.\n\nDetalle de los predios:`,
+        cuerpo: `La suscrita gerencia de ${EMPRESA.nombre}\n\nCERTIFICA:\n\nQue el(la) señor(a) ${d.u!.nombre.toUpperCase()}${cc(d.u!)}, propietario(a) de ${ps.length === 1 ? 'un (1) predio' : `${ps.length} predios`} con servicio de acueducto y alcantarillado, se encuentra a PAZ Y SALVO por todo concepto${ps.length > 1 ? ' en cada uno de ellos' : ''}.\n\nSe expide a solicitud del interesado${conDestino(d.v.destino)}, en ${EMPRESA.ciudad}, a los ${fechaLarga(d.hoy)}.\n\nDetalle de los predios:`,
         tabla: { columnas: ['Suscriptor', 'Dirección', 'Estrato', 'Estado'], filas: ps.map((x) => [x.u.id, `${x.u.direccion || '—'} (${ubicacion(x.u)})`, String(x.u.estrato), 'Paz y salvo']) },
         firmas: [firmaGerente(d)],
       }
@@ -135,13 +138,13 @@ export const PLANTILLAS: Plantilla[] = [
   },
   {
     id: 'cert-suscriptor', nombre: 'Certificado de suscriptor', descripcion: 'Constancia de que el predio tiene el servicio y su estado actual.', grupo: 'Suscriptores', prefijo: 'CS', formato: 'certificado', sujeto: 'suscriptor',
-    campos: [{ k: 'destino', label: 'Con destino a', def: 'quien interese' }],
+    campos: [{ k: 'destino', label: 'Con destino a' }],
     generar: (d) => {
       const u = d.u!, desde = u.historial[0]
       return {
         titulo: 'CERTIFICADO',
         asunto: `Certificado de suscriptor — ${u.nombre}`,
-        cuerpo: `La suscrita gerencia de ${EMPRESA.nombre}\n\nCERTIFICA:\n\nQue el(la) señor(a) ${u.nombre.toUpperCase()} figura como suscriptor(a) No. ${u.id} de los servicios de acueducto y alcantarillado en el predio ubicado en ${predio(u)}, estrato ${u.estrato}, con medidor No. ${u.medidor}${desde ? `, con registros de facturación desde ${nombrePeriodo(desde.mes, desde.anio)}` : ''}.\n\nA la fecha el servicio se encuentra ${u.estado === 'Activo' ? 'ACTIVO' : 'SUSPENDIDO'}, con un consumo promedio de ${num(d.r!.consumoPromedio, 1)} m³ mensuales${d.r!.deuda > 0 ? ` y un saldo pendiente de ${cop(d.r!.deuda)}` : ' y sin saldos pendientes'}.\n\nSe expide a solicitud del interesado, con destino a ${d.v.destino || 'quien interese'}, a los ${fechaLarga(d.hoy)}.`,
+        cuerpo: `La suscrita gerencia de ${EMPRESA.nombre}\n\nCERTIFICA:\n\nQue el(la) señor(a) ${u.nombre.toUpperCase()} figura como suscriptor(a) No. ${u.id} de los servicios de acueducto y alcantarillado en el predio ubicado en ${predio(u)}, estrato ${u.estrato}, con medidor No. ${u.medidor}${desde ? `, con registros de facturación desde ${nombrePeriodo(desde.mes, desde.anio)}` : ''}.\n\nA la fecha el servicio se encuentra ${u.estado === 'Activo' ? 'ACTIVO' : 'SUSPENDIDO'}, con un consumo promedio de ${num(d.r!.consumoPromedio, 1)} m³ mensuales${d.r!.deuda > 0 ? ` y un saldo pendiente de ${cop(d.r!.deuda)}` : ' y sin saldos pendientes'}.\n\nSe expide a solicitud del interesado${conDestino(d.v.destino)}, a los ${fechaLarga(d.hoy)}.`,
         firmas: [firmaGerente(d)],
       }
     },
@@ -211,14 +214,14 @@ export const PLANTILLAS: Plantilla[] = [
     id: 'cert-laboral', nombre: 'Certificado laboral', descripcion: 'Certifica cargo, tipo de contrato, antigüedad y (opcional) salario.', grupo: 'Nómina y personal', prefijo: 'CL', formato: 'certificado', sujeto: 'empleado', soloAdmin: true,
     campos: [
       { k: 'salario', label: '¿Incluir salario?', tipo: 'select', opciones: ['Sí', 'No'], def: 'Sí' },
-      { k: 'destino', label: 'Con destino a', def: 'quien interese' },
+      { k: 'destino', label: 'Con destino a' },
     ],
     generar: (d) => {
       const e = d.e!
       return {
         titulo: 'CERTIFICADO LABORAL',
         asunto: `Certificado laboral — ${e.nombre}`,
-        cuerpo: `La suscrita gerencia de ${EMPRESA.nombre}\n\nCERTIFICA:\n\nQue el(la) señor(a) ${e.nombre.toUpperCase()}, identificado(a) con cédula de ciudadanía No. ${e.cedula}, labora en esta empresa desde el ${fechaISO(e.fechaIngreso)} (${antiguedad(e.fechaIngreso, d.hoy)}), con contrato a ${e.contrato.toLowerCase()}, desempeñando el cargo de ${e.cargo.toUpperCase()} en el área ${e.area.toLowerCase()}${d.v.salario === 'No' ? '' : `, con un salario básico mensual de ${cop(e.salario)}`}.\n\nSe expide a solicitud del interesado, con destino a ${d.v.destino || 'quien interese'}, en ${EMPRESA.ciudad}, a los ${fechaLarga(d.hoy)}.`,
+        cuerpo: `La suscrita gerencia de ${EMPRESA.nombre}\n\nCERTIFICA:\n\nQue el(la) señor(a) ${e.nombre.toUpperCase()}, identificado(a) con cédula de ciudadanía No. ${e.cedula}, labora en esta empresa desde el ${fechaISO(e.fechaIngreso)} (${antiguedad(e.fechaIngreso, d.hoy)}), con contrato a ${e.contrato.toLowerCase()}, desempeñando el cargo de ${e.cargo.toUpperCase()} en el área ${e.area.toLowerCase()}${d.v.salario === 'No' ? '' : `, con un salario básico mensual de ${cop(e.salario)}`}.\n\nSe expide a solicitud del interesado${conDestino(d.v.destino)}, en ${EMPRESA.ciudad}, a los ${fechaLarga(d.hoy)}.`,
         firmas: [firmaGerente(d)],
       }
     },
@@ -339,11 +342,11 @@ export const PLANTILLAS: Plantilla[] = [
     ],
     generar: (d) => {
       const u = d.u!
-      const tec = d.empleados.find((x) => x.nombre === d.v.tecnico) ?? d.empleados.find((x) => x.area === 'Operativa')!
+      const tec = d.empleados.find((x) => x.nombre === d.v.tecnico) ?? d.empleados.find((x) => x.area === 'Operativa' && x.activo) ?? { nombre: '[Nombre del técnico]', cargo: 'Técnico' }
       return {
         titulo: 'ACTA DE VISITA TÉCNICA',
         asunto: `Acta de visita — ${u.nombre}`,
-        cuerpo: `En ${EMPRESA.ciudad}, el ${fechaLarga(d.hoy)}, se realizó visita técnica al predio del(la) suscriptor(a) ${u.nombre.toUpperCase()}, No. ${u.id}, ${u.barrio ? `barrio ${u.barrio}, ` : ''}sector ${u.sector}, estrato ${u.estrato}.\n\nMotivo de la visita: ${d.v.motivo || '[motivo]'}.\nMedidor: ${u.medidor} · Lectura encontrada: ${num(lecturaMedidor(u))} m³ · Estado del servicio: ${u.estado}.\n\nHALLAZGOS\n\n${d.v.hallazgos || '[Lo que se encontró en el predio]'}\n\nACCIONES Y RECOMENDACIONES\n\n${d.v.acciones || '[Lo que se hizo y lo que se recomienda al usuario]'}\n\nEl usuario manifiesta conocer el contenido de la presente acta y firma en constancia.`,
+        cuerpo: `En ${EMPRESA.ciudad}, el ${fechaLarga(d.hoy)}, se realizó visita técnica al predio del(la) suscriptor(a) ${u.nombre.toUpperCase()}, No. ${u.id}, ${u.barrio ? `barrio ${u.barrio}, ` : ''}sector ${u.sector}, estrato ${u.estrato}.\n\nMotivo de la visita: ${d.v.motivo || '[motivo]'}.\n${u.conMedidor && u.medidor ? `Medidor: ${u.medidor} · Lectura encontrada: ${num(lecturaMedidor(u))} m³` : 'Predio sin medidor (cobro fijo)'} · Estado del servicio: ${u.estado}.\n\nHALLAZGOS\n\n${d.v.hallazgos || '[Lo que se encontró en el predio]'}\n\nACCIONES Y RECOMENDACIONES\n\n${d.v.acciones || '[Lo que se hizo y lo que se recomienda al usuario]'}\n\nEl usuario manifiesta conocer el contenido de la presente acta y firma en constancia.`,
         firmas: [{ nombre: tec.nombre, cargo: tec.cargo }, { nombre: u.nombre, cargo: 'Suscriptor(a) o quien atiende' }],
       }
     },
@@ -383,7 +386,7 @@ let logoCache: Uint8Array | undefined
 async function logo() {
   if (logoCache) return logoCache
   try {
-    const r = await fetch('/logo_circulo.png')
+    const r = await fetch('/logo_emcagua.png')
     if (r.ok) logoCache = new Uint8Array(await r.arrayBuffer())
   } catch { /* sin logo */ }
   return logoCache

@@ -99,9 +99,7 @@ export default function Login() {
 
         <div className="relative z-10 flex flex-col w-full px-12 xl:px-16 py-12">
           <div className="flex items-center gap-3">
-            <div className="h-12 w-12 rounded-full bg-white shadow-lg shadow-black/15 flex items-center justify-center">
-              <img src="/logo_circulo.png" alt="" className="h-10 w-10 object-contain" />
-            </div>
+            <img src="/logo_emcagua.png" alt="" className="h-12 w-auto object-contain drop-shadow-lg" />
             <div className="leading-tight">
               <p className="text-lg font-extrabold tracking-tight">EMCAGUA <span className="text-primary-light">APC</span></p>
               <p className="text-xs text-white/60">Servicios públicos de El Carmen y Guamalito</p>
@@ -141,7 +139,7 @@ export default function Login() {
             <path fill="#8AC43A" d="M0 90c120-30 240-30 360 0s240 30 360 0 240-30 360 0 240 30 360 0v70H0z" />
           </svg>
           <div className="relative flex items-center gap-3">
-            <div className="h-12 w-12 rounded-full bg-white flex items-center justify-center shadow-lg shadow-black/15"><img src="/logo_circulo.png" alt="" className="h-10 w-10 object-contain" /></div>
+            <img src="/logo_emcagua.png" alt="" className="h-12 w-auto object-contain drop-shadow-lg" />
             <div className="leading-tight">
               <p className="text-lg font-extrabold">EMCAGUA <span className="text-primary-light">APC</span></p>
               <p className="text-xs text-white/65">Sistema de gestión</p>

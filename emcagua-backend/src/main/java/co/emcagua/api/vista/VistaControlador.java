@@ -221,15 +221,34 @@ public class VistaControlador {
         }
     }
 
+    /** Siguiente código de suscriptor: el mayor código numérico + 1 (el primero es 1000). */
+    private synchronized String siguienteCodigo() {
+        long max = 999;
+        for (String c : predios.todosLosCodigos()) {
+            if (c != null && c.matches("\\d{1,18}")) max = Math.max(max, Long.parseLong(c));
+        }
+        return String.valueOf(max + 1);
+    }
+
+    @Operation(summary = "Siguiente código de suscriptor que se va a asignar")
+    @GetMapping("/suscriptores/siguiente-codigo")
+    @Transactional(readOnly = true)
+    public Map<String, Object> verSiguienteCodigo() {
+        exigir("usuarios");
+        return Map.of("codigo", siguienteCodigo());
+    }
+
     @Operation(summary = "Crear un predio (y su propietario si es nuevo)")
     @PostMapping("/suscriptores")
     @Transactional
     public Map<String, Object> crear(@RequestBody FormSuscriptor f) {
         exigir("usuarios");
-        if (f.id() == null || !f.id().matches("\\d{3,10}")) throw new ErrorNegocio("El código del predio debe tener solo números (3 a 10 dígitos)");
-        if (predios.findByCodigo(f.id()).isPresent()) throw new ErrorNegocio("Ya existe un usuario con el ID " + f.id());
+        // Sin código: se asigna el siguiente en orden (1000, 1001, 1002…)
+        String codigo = f.id() == null || f.id().isBlank() ? siguienteCodigo() : f.id().trim();
+        if (!codigo.matches("\\d{3,10}")) throw new ErrorNegocio("El código del predio debe tener solo números (3 a 10 dígitos)");
+        if (predios.findByCodigo(codigo).isPresent()) throw new ErrorNegocio("Ya existe un usuario con el ID " + codigo);
         Predio p = new Predio();
-        p.setCodigo(f.id());
+        p.setCodigo(codigo);
         aplicar(p, f);
         p = predios.save(p);
         medidor(p, f.medidor());

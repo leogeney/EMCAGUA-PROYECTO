@@ -57,7 +57,7 @@ export default function Reporte() {
       <article className="print-area bg-white rounded-2xl border border-gray-100 shadow-sm p-6 sm:p-10 space-y-8 text-sm">
         <header className="flex items-start justify-between gap-4 pb-6 border-b-2 border-secondary">
           <div className="flex items-center gap-3">
-            <img src="/logo_circulo.png" alt="" className="h-14 w-14 object-contain" />
+            <img src="/logo_emcagua.png" alt="" className="h-14 w-14 object-contain" />
             <div>
               <p className="text-lg font-extrabold text-dark leading-none">EMCAGUA APC</p>
               <p className="text-xs text-gray-500 mt-1">Empresa de El Carmen y Guamalito · Administración Pública Cooperativa</p>

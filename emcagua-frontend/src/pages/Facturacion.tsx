@@ -206,7 +206,7 @@ function DetalleFactura({ factura: f, onClose }: { factura: Factura; onClose: ()
       <div className="print-area px-6 py-5">
         <div className="flex items-start justify-between gap-4 pb-4 border-b border-gray-100">
           <div className="flex gap-3">
-            <img src="/logo_circulo.png" alt="EMCAGUA" className="h-14 w-14 object-contain" />
+            <img src="/logo_emcagua.png" alt="EMCAGUA" className="h-14 w-14 object-contain" />
             <div>
               <p className="text-sm font-extrabold text-dark leading-none">EMCAGUA APC</p>
               <p className="text-[11px] font-semibold text-secondary uppercase tracking-wide mt-1">Empresa de El Carmen y Guamalito</p>

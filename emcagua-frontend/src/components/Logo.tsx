@@ -11,7 +11,7 @@ export default function Logo({ size = 48, showText = true, variant = 'full', lig
   return (
     <div className="flex items-center gap-3">
       <img
-        src="/logo_circulo.png"
+        src="/logo_emcagua.png"
         alt="EMCAGUA APC"
         style={{ height: h, width: 'auto' }}
         className="shrink-0 object-contain"

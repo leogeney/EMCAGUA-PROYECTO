@@ -6,6 +6,7 @@ import AsistenteFlotante from '../asistente/AsistenteFlotante'
 import { tokenApi } from '../../utils/session'
 import { BotonSinMedidores } from '../ModoSinMedidores'
 import GuardiaSesion from './GuardiaSesion'
+import RevisionApartado from '../asistente/RevisionApartado'
 
 export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -36,6 +37,7 @@ export default function AppLayout() {
           </div>
         </header>
         <main className="flex-1 overflow-y-auto">
+          <RevisionApartado />
           <Suspense fallback={<div className="p-8 flex justify-center"><span className="h-6 w-6 rounded-full border-2 border-gray-200 border-t-secondary animate-spin" /></div>}>
             <Outlet />
           </Suspense>

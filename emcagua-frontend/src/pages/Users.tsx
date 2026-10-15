@@ -26,7 +26,7 @@ import { formatCutoff, getNextCutoff } from '../utils/cutoff'
 import { cop, fechaCorta, num } from '../utils/format'
 import { exportarXls } from '../utils/excel'
 import { whatsappUrl } from '../utils/whatsapp'
-import { etiquetaPredio, formatoCedula, limpiarCedula, otrosPredios, propietarios, saldoPropietario } from '../data/propietarios'
+import { etiquetaPredio, formatoCedula, limpiarCedula, otrosPredios, propietarios, saldoPropietario, siguienteCodigo } from '../data/propietarios'
 
 /** Lectura del periodo elegido ('actual' = la última registrada). */
 function lecturaEn(u: Usuario, periodo: string) {
@@ -240,9 +240,9 @@ export default function Users() {
   const guardar = async (e: React.FormEvent) => {
     e.preventDefault()
     const telErr = validarTelefono(form.telefono)
-    const idErr = !editingId && !/^\d{3,10}$/.test(form.id) ? 'Solo números (3 a 10 dígitos)' : ''
-    if (telErr || idErr) return setFormError({ telefono: telErr || undefined, id: idErr || undefined })
-    const medidor = form.medidor && form.medidor !== 'MED-' ? form.medidor : `MED-${form.id}`
+    if (telErr) return setFormError({ telefono: telErr })
+    // Predio nuevo: el código lo asigna el sistema en orden; el medidor por defecto es MED-<código>
+    const medidor = form.medidor && form.medidor !== 'MED-' ? form.medidor : editingId ? `MED-${form.id}` : ''
     const tel = form.telefono.replace(/\D/g, '').replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3')
     const cedula = limpiarCedula(form.cedula)
     const ocupante = form.ocupante?.nombre.trim() ? { nombre: form.ocupante.nombre.trim(), telefono: form.ocupante.telefono.trim() } : undefined
@@ -256,9 +256,9 @@ export default function Users() {
       for (const o of otros) await editarUsuario(o.id, { nombre: form.nombre, cedula, direccion: o.direccion, ocupante: o.ocupante, sector: o.sector, barrio: o.barrio, estrato: o.estrato, medidor: o.medidor, conMedidor: o.conMedidor, telefono: tel })
       toast('Predio actualizado', otros.length ? `${form.nombre} · también en sus otros ${otros.length} predio(s)` : form.nombre)
     } else {
-      const err = await crearUsuario({ id: form.id, ...datos })
-      if (err) return setFormError({ id: err })
-      toast('Predio creado', `${form.nombre} · ${medidor}${mismoDueno.length ? ` · ahora tiene ${mismoDueno.length + 1} predios` : ''}`)
+      const r = await crearUsuario({ id: '', ...datos })
+      if (r.error) return setFormError({ id: r.error })
+      toast('Predio creado', `${form.nombre} · código ${r.id}${mismoDueno.length ? ` · ahora tiene ${mismoDueno.length + 1} predios` : ''}`)
     }
     setFormOpen(false)
   }
@@ -516,13 +516,11 @@ export default function Users() {
                 id="f-id"
                 required
                 inputMode="numeric"
-                readOnly={!!editingId}
-                value={form.id}
-                onChange={(e) => { const v = e.target.value.replace(/\D/g, ''); setForm((f) => ({ ...f, id: v, medidor: `MED-${v}` })); setFormError((x) => ({ ...x, id: undefined })) }}
-                placeholder="10300"
-                className={`field ${editingId ? 'bg-gray-soft text-gray-500 cursor-not-allowed' : ''} ${formError.id ? 'border-red-300' : ''}`}
+                readOnly
+                value={editingId ? form.id : siguienteCodigo(usuarios)}
+                className={`field bg-gray-soft text-gray-500 cursor-not-allowed tabular-nums ${formError.id ? 'border-red-300' : ''}`}
               />
-              {formError.id && <p className="text-[11px] text-red-600 mt-1">{formError.id}</p>}
+              {formError.id ? <p className="text-[11px] text-red-600 mt-1">{formError.id}</p> : !editingId && <p className="text-[11px] text-gray-400 mt-1">Automático, en orden.</p>}
             </div>
             <div>
               <label className="field-label" htmlFor="f-tel">Teléfono (WhatsApp)</label>
@@ -579,7 +577,7 @@ export default function Users() {
             <label className="field-label" htmlFor="f-med">Medidor</label>
             <div className="flex">
               <span className="inline-flex items-center px-3 rounded-l-xl border border-r-0 border-gray-200 bg-gray-soft text-sm font-mono font-bold text-gray-500">MED-</span>
-              <input id="f-med" value={form.medidor.replace(/^MED-/, '')} onChange={(e) => setForm({ ...form, medidor: `MED-${e.target.value.replace(/\D/g, '')}` })} placeholder={form.id || '10300'} className="field rounded-l-none" />
+              <input id="f-med" value={form.medidor.replace(/^MED-/, '')} onChange={(e) => setForm({ ...form, medidor: `MED-${e.target.value.replace(/\D/g, '')}` })} placeholder={editingId ? form.id : siguienteCodigo(usuarios)} className="field rounded-l-none" />
             </div>
             <p className="text-[11px] text-gray-400 mt-1">Por defecto usa el mismo número del código</p>
           </div>}

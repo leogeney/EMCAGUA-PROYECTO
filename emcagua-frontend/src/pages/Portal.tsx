@@ -145,7 +145,7 @@ export default function Portal() {
       <header className="bg-white border-b border-gray-100">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2"><Logo /><span className="hidden sm:inline text-xs text-gray-400 border-l border-gray-200 pl-3">Oficina virtual</span></div>
-          {u ? <button onClick={salir} className="btn-sm"><Ico d={D.out} /> Salir</button> : <div className="flex items-center gap-4"><Link to="/verificar" className="text-xs font-semibold text-secondary hover:underline">Verificar un documento</Link><Link to="/login" className="text-xs text-gray-400 hover:text-dark">Acceso funcionarios</Link></div>}
+          {u ? <button onClick={salir} className="btn-sm"><Ico d={D.out} /> Salir</button> : <Link to="/verificar" className="text-xs font-semibold text-secondary hover:underline">Verificar un documento</Link>}
         </div>
       </header>
 

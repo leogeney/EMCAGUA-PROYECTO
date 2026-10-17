@@ -37,12 +37,14 @@ public class AdministracionVista {
     private final CuentaRepositorio cuentas;
     private final RolRepositorio roles;
     private final PasswordEncoder cifrador;
+    private final co.emcagua.api.auditoria.AuditoriaServicio auditoria;
 
-    public AdministracionVista(TarifaRepositorio tarifas, CuentaRepositorio cuentas, RolRepositorio roles, PasswordEncoder cifrador) {
+    public AdministracionVista(TarifaRepositorio tarifas, CuentaRepositorio cuentas, RolRepositorio roles, PasswordEncoder cifrador, co.emcagua.api.auditoria.AuditoriaServicio auditoria) {
         this.tarifas = tarifas;
         this.cuentas = cuentas;
         this.roles = roles;
         this.cifrador = cifrador;
+        this.auditoria = auditoria;
     }
 
     static void exigir(String modulo) {
@@ -89,7 +91,9 @@ public class AdministracionVista {
         t.setSubsidioEstrato1(s.getOrDefault("1", 0.0));
         t.setSubsidioEstrato2(s.getOrDefault("2", 0.0));
         t.setSubsidioEstrato3(s.getOrDefault("3", 0.0));
-        return tarifa(tarifas.save(t));
+        Tarifa guardada = tarifas.save(t);
+        auditoria.registrar("tarifas", "TARIFA_GUARDAR", "Guardó tarifa para el periodo " + f.desde().mes() + "/" + f.desde().anio(), "Tarifa", f.desde().mes() + "/" + f.desde().anio(), null);
+        return tarifa(guardada);
     }
 
     @DeleteMapping("/tarifas/{anio}/{mes}")
@@ -97,6 +101,7 @@ public class AdministracionVista {
     public Map<String, Object> quitarTarifa(@PathVariable int anio, @PathVariable int mes) {
         exigir("tarifas");
         tarifas.findAll().stream().filter(x -> x.getDesdeAnio() == anio && x.getDesdeMes() == mes).forEach(tarifas::delete);
+        auditoria.registrar("tarifas", "TARIFA_ELIMINAR", "Eliminó tarifa del periodo " + mes + "/" + anio, "Tarifa", mes + "/" + anio, null);
         return Map.of("ok", true);
     }
 
@@ -158,7 +163,9 @@ public class AdministracionVista {
         if (yo && (!r.isFijo() || Boolean.FALSE.equals(f.activo())) && c.getRol().isFijo()) throw new ErrorNegocio("No puedes quitarte a ti mismo el rol de Gerente ni desactivar tu cuenta");
         c.setRol(r);
         if (f.activo() != null) c.setActivo(f.activo());
-        return cuenta(cuentas.save(c));
+        Cuenta guardada = cuentas.save(c);
+        auditoria.registrar("cuentas", nueva ? "CREAR_USUARIO" : "EDITAR_USUARIO", (nueva ? "Creó la cuenta de usuario " : "Modificó la cuenta de usuario ") + guardada.getUsuario() + " (" + guardada.getNombre() + ", rol " + r.getNombre() + ")", "Cuenta", guardada.getUsuario(), "{\"rol\":\"" + r.getCodigo() + "\",\"activo\":" + guardada.isActivo() + "}");
+        return cuenta(guardada);
     }
 
     public record RolForm(String nombre, String descripcion, List<String> permisos) {}
@@ -168,11 +175,14 @@ public class AdministracionVista {
     public Map<String, Object> guardarRol(@PathVariable String codigo, @RequestBody RolForm f) {
         exigir("cuentas");
         Rol r = roles.findByCodigo(codigo).orElseGet(() -> { Rol n = new Rol(); n.setCodigo(codigo); return n; });
+        boolean nuevo = r.getId() == null;
         if (f.nombre() != null && !f.nombre().isBlank()) r.setNombre(f.nombre().trim());
         if (r.getNombre() == null) throw new ErrorNegocio("Escribe el nombre del rol");
         r.setDescripcion(f.descripcion());
         if (!r.isFijo() && f.permisos() != null) r.setPermisos(new LinkedHashSet<>(f.permisos().stream().filter(Modulos.TODOS::contains).toList()));
-        return rol(roles.save(r));
+        Rol guardado = roles.save(r);
+        auditoria.registrar("cuentas", nuevo ? "CREAR_ROL" : "EDITAR_ROL", (nuevo ? "Creó el rol " : "Modificó el rol ") + guardado.getNombre() + " (" + guardado.getCodigo() + ")", "Rol", guardado.getCodigo(), null);
+        return rol(guardado);
     }
 
     @DeleteMapping("/roles/{codigo}")
@@ -183,6 +193,7 @@ public class AdministracionVista {
         if (r.isFijo()) throw new ErrorNegocio("El rol de Gerente no se puede borrar");
         if (cuentas.findAll().stream().anyMatch(c -> c.getRol().getId().equals(r.getId()))) throw new ErrorNegocio("Hay cuentas con ese rol: cámbiales el rol primero");
         roles.delete(r);
+        auditoria.registrar("cuentas", "ELIMINAR_ROL", "Eliminó el rol " + r.getNombre() + " (" + codigo + ")", "Rol", codigo, null);
         return Map.of("ok", true);
     }
 }

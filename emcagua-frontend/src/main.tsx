@@ -4,6 +4,11 @@ import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import './data/config' // aplica la configuración guardada antes de dibujar
 import App from './App'
+
+// Si se actualizó el sistema y el navegador aún pide archivos viejos, recarga automáticamente
+window.addEventListener('vite:preloadError', () => {
+  window.location.reload()
+})
 import { DataProvider } from './data/DataContext'
 import { NominaProvider } from './data/NominaContext'
 import { PqrProvider } from './data/PqrContext'

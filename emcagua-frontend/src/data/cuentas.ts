@@ -31,6 +31,7 @@ export const MODULOS: Modulo[] = [
   { id: 'nomina', nombre: 'Nómina', grupo: 'Administración' },
   { id: 'configuracion', nombre: 'Configuración', grupo: 'Administración' },
   { id: 'cuentas', nombre: 'Cuentas y roles', grupo: 'Administración' },
+  { id: 'auditoria', nombre: 'Auditoría de operaciones', grupo: 'Administración' },
 ]
 
 export type Rol = { id: string; nombre: string; descripcion: string; permisos: string[]; fijo?: boolean }

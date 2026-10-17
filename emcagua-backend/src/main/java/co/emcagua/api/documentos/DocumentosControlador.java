@@ -25,10 +25,12 @@ import jakarta.validation.constraints.Pattern;
 public class DocumentosControlador {
     private final DocumentoRepositorio repo;
     private final VerificacionServicio verificacion;
+    private final co.emcagua.api.auditoria.AuditoriaServicio auditoria;
 
-    public DocumentosControlador(DocumentoRepositorio repo, VerificacionServicio verificacion) {
+    public DocumentosControlador(DocumentoRepositorio repo, VerificacionServicio verificacion, co.emcagua.api.auditoria.AuditoriaServicio auditoria) {
         this.repo = repo;
         this.verificacion = verificacion;
+        this.auditoria = auditoria;
     }
 
     public record Emision(@NotBlank @Pattern(regexp = "[A-Z]{2,4}") String prefijo, @NotBlank String plantillaId, @NotBlank String nombre, @NotBlank String dirigidoA, String sujetoId, String formato, String contenido) {}
@@ -49,7 +51,9 @@ public class DocumentosControlador {
         d.setEmitido(Instant.now());
         d.setEmitidoPor(Sesion.nombre());
         d.setCodigoVerificacion(verificacion.codigoDocumento(d.getConsecutivo(), d.getPlantillaId(), d.getDirigidoA(), d.getEmitido()));
-        return repo.save(d);
+        DocumentoEmitido guardado = repo.save(d);
+        auditoria.registrar("documentos", "EMITIR_DOCUMENTO", "Emitió el documento " + guardado.getConsecutivo() + " (" + guardado.getNombre() + ") para " + guardado.getDirigidoA(), "Documento", guardado.getConsecutivo(), "{\"plantilla\":\"" + guardado.getPlantillaId() + "\",\"sujeto\":\"" + guardado.getSujetoId() + "\"}");
+        return guardado;
     }
 
     public record Anulacion(@NotBlank String motivo) {}
@@ -63,6 +67,8 @@ public class DocumentosControlador {
         d.setAnulado(Instant.now());
         d.setAnuladoPor(Sesion.nombre());
         d.setMotivoAnulacion(a.motivo());
-        return repo.save(d);
+        DocumentoEmitido guardado = repo.save(d);
+        auditoria.registrar("documentos", "ANULAR_DOCUMENTO", "Anuló el documento " + guardado.getConsecutivo() + ": " + a.motivo(), "Documento", guardado.getConsecutivo(), "{\"motivo\":\"" + a.motivo() + "\"}");
+        return guardado;
     }
 }

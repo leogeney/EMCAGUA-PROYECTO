@@ -41,8 +41,9 @@ public class FacturacionServicio {
     private final TarifaServicio tarifas;
     private final VerificacionServicio verificacion;
     private final ConfiguracionServicio config;
+    private final co.emcagua.api.auditoria.AuditoriaServicio auditoria;
 
-    public FacturacionServicio(PredioRepositorio predios, MedidorRepositorio medidores, LecturaRepositorio lecturas, FacturaRepositorio facturas, TarifaServicio tarifas, VerificacionServicio verificacion, ConfiguracionServicio config) {
+    public FacturacionServicio(PredioRepositorio predios, MedidorRepositorio medidores, LecturaRepositorio lecturas, FacturaRepositorio facturas, TarifaServicio tarifas, VerificacionServicio verificacion, ConfiguracionServicio config, co.emcagua.api.auditoria.AuditoriaServicio auditoria) {
         this.config = config;
         this.predios = predios;
         this.medidores = medidores;
@@ -50,6 +51,7 @@ public class FacturacionServicio {
         this.facturas = facturas;
         this.tarifas = tarifas;
         this.verificacion = verificacion;
+        this.auditoria = auditoria;
     }
 
     public record Resumen(String periodo, int leidos, int estimados, int suspendidos, int yaExistian, long totalFacturado, int tarifaFija) {}
@@ -132,6 +134,7 @@ public class FacturacionServicio {
         }
         var r = new Resumen(p.nombre(), leidos, estimados, suspendidos, existian, total, fijos);
         log.info("Cierre de {}: {}", p.nombre(), r);
+        auditoria.registrar("facturacion", "CIERRE_FACTURACION", "Cierre mensual de facturación " + p.nombre() + ": facturado $" + total + " (" + leidos + " leídos, " + estimados + " estimados)", "Factura", p.nombre(), "{\"periodo\":\"" + p.nombre() + "\",\"totalFacturado\":" + total + ",\"leidos\":" + leidos + ",\"estimados\":" + estimados + ",\"suspendidos\":" + suspendidos + "}");
         return r;
     }
 
@@ -156,6 +159,8 @@ public class FacturacionServicio {
         if (motivo == null || motivo.isBlank()) throw new ErrorNegocio("Escribe el motivo de la anulación");
         f.setEstado(Factura.Estado.ANULADA);
         log.info("Factura {} anulada: {}", f.getNumero(), motivo);
-        return facturas.save(f);
+        Factura guardada = facturas.save(f);
+        auditoria.registrar("facturacion", "ANULAR_FACTURA", "Anuló la factura " + f.getNumero() + ": " + motivo, "Factura", f.getNumero(), "{\"motivo\":\"" + motivo + "\"}");
+        return guardada;
     }
 }

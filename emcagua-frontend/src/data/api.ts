@@ -11,7 +11,7 @@ export function tokenApi(): string | undefined {
 /** La API respondió 401 (token vencido): se cierra la sesión y se vuelve al inicio de sesión. */
 export function cerrarSesionApi() {
   try { localStorage.removeItem(KEY_SESION) } catch { /* sin almacenamiento */ }
-  if (!window.location.pathname.startsWith('/login')) window.location.assign('/login')
+  if (!window.location.pathname.startsWith('/login')) { try { sessionStorage.removeItem('emcagua_login_ok') } catch { /* */ } window.location.assign('/portal') }
 }
 
 export const API_URL = ((import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8080').replace(/\/+$/, '')

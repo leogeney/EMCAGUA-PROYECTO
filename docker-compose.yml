@@ -34,6 +34,8 @@ services:
       EMCAGUA_FRONTEND:    http://localhost
       EMCAGUA_DEMO:        ${EMCAGUA_DEMO:-false}
       EMCAGUA_DDL:         ${EMCAGUA_DDL:-update}
+      EMCAGUA_PG_BIN: /usr/bin
+
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     volumes:

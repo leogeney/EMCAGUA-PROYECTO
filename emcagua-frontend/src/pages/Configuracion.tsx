@@ -1,10 +1,11 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { CONFIG_INICIAL, guardarConfig, lineaContacto, useConfig, type Config } from '../data/config'
 import { useToast } from '../components/ui/Toast'
 import SectoresBarrios from '../components/SectoresBarrios'
 import { Interruptor } from '../components/ModoSinMedidores'
 import Respaldos from '../components/Respaldos'
-import { isAdmin } from '../utils/session'
+import { isAdmin, puede } from '../utils/session'
 import { MODO_API } from '../data/api'
 import { cop, pct } from '../utils/format'
 
@@ -100,6 +101,21 @@ export default function Configuracion() {
           <SectoresBarrios />
 
           {MODO_API && isAdmin() && <Respaldos carpetaExtra={c.carpetaRespaldoExtra} onCarpetaExtra={(v) => set('carpetaRespaldoExtra', v)} />}
+
+          {puede('auditoria') && (
+            <section className="card p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-primary-50 text-primary-700 flex items-center justify-center shrink-0">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+                </div>
+                <div>
+                  <h3 className="font-bold text-dark text-sm">Auditoría completa de operaciones</h3>
+                  <p className="text-xs text-gray-500">Historial inmutable de todo lo que cada usuario hace en el sistema.</p>
+                </div>
+              </div>
+              <Link to="/auditoria" className="btn-secondary text-xs h-9 no-underline whitespace-nowrap">Ver registros de auditoría →</Link>
+            </section>
+          )}
         </div>
 
         <aside className="space-y-4 xl:sticky xl:top-4">

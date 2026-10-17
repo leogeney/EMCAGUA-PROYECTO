@@ -21,11 +21,13 @@ public class PqrServicio {
     private final PqrRepositorio repo;
     private final EventoPqrRepositorio eventos;
     private final PredioRepositorio predios;
+    private final co.emcagua.api.auditoria.AuditoriaServicio auditoria;
 
-    public PqrServicio(PqrRepositorio repo, EventoPqrRepositorio eventos, PredioRepositorio predios) {
+    public PqrServicio(PqrRepositorio repo, EventoPqrRepositorio eventos, PredioRepositorio predios, co.emcagua.api.auditoria.AuditoriaServicio auditoria) {
         this.repo = repo;
         this.eventos = eventos;
         this.predios = predios;
+        this.auditoria = auditoria;
     }
 
     public record Radicacion(Pqr.Tipo tipo, Pqr.Categoria categoria, Pqr.Canal canal, String predio, String nombre, String telefono, String barrio, String descripcion) {}
@@ -61,6 +63,7 @@ public class PqrServicio {
         p.setVence(DiasHabiles.sumar(LocalDate.now(FacturacionServicio.ZONA), PLAZO_DIAS_HABILES));
         p = repo.save(p);
         eventos.save(new EventoPqr(p, usuario, "Radicada por " + p.getCanal().name().toLowerCase().replace('_', ' ')));
+        auditoria.registrar("pqr", "PQR_RADICAR", "Radicó " + p.getRadicado() + " (" + p.getTipo().name() + " - " + p.getCategoria().name() + ") de " + p.getNombre(), "Pqr", p.getRadicado(), "{\"predio\":\"" + (p.getPredio() != null ? p.getPredio().getCodigo() : "") + "\",\"canal\":\"" + p.getCanal() + "\"}");
         return p;
     }
 
@@ -70,6 +73,7 @@ public class PqrServicio {
         p.setResponsable(responsable);
         if (p.getEstado() == Pqr.Estado.RADICADA) p.setEstado(Pqr.Estado.EN_TRAMITE);
         eventos.save(new EventoPqr(p, usuario, "Asignada a " + responsable));
+        auditoria.registrar("pqr", "PQR_ASIGNAR", "Asignó la " + p.getRadicado() + " a " + responsable, "Pqr", p.getRadicado(), null);
         return repo.save(p);
     }
 
@@ -83,6 +87,7 @@ public class PqrServicio {
         p.setEstado(Pqr.Estado.RESPONDIDA);
         int dias = DiasHabiles.restantes(LocalDate.now(FacturacionServicio.ZONA), p.getVence());
         eventos.save(new EventoPqr(p, usuario, dias >= 0 ? "Respondida a tiempo" : "Respondida fuera de término (" + (-dias) + " días hábiles tarde)"));
+        auditoria.registrar("pqr", "PQR_RESPONDER", "Respondió la " + p.getRadicado() + (dias >= 0 ? " a tiempo" : " fuera de término"), "Pqr", p.getRadicado(), "{\"diasRestantes\":" + dias + "}");
         return repo.save(p);
     }
 
@@ -91,6 +96,7 @@ public class PqrServicio {
         Pqr p = buscar(radicado);
         p.setEstado(Pqr.Estado.CERRADA);
         eventos.save(new EventoPqr(p, usuario, "Cerrada"));
+        auditoria.registrar("pqr", "PQR_CERRAR", "Cerró la solicitud " + p.getRadicado(), "Pqr", p.getRadicado(), null);
         return repo.save(p);
     }
 

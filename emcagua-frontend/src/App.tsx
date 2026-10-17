@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ComponentType, type LazyExoticComponent } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useSearchParams } from 'react-router-dom'
 import AppLayout from './components/layout/AppLayout'
 import Login from './pages/Login'
 import { MODULOS } from './data/cuentas'
@@ -30,15 +30,16 @@ const PAGINAS: Record<string, LazyExoticComponent<ComponentType>> = {
   nomina: lazy(() => import('./pages/Nomina')),
   configuracion: lazy(() => import('./pages/Configuracion')),
   cuentas: lazy(() => import('./pages/Cuentas')),
+  auditoria: lazy(() => import('./pages/Auditoria')),
 }
 
 /** Primer módulo que el rol puede ver (para redirigir). */
 const inicio = () => `/${MODULOS.find((m) => PAGINAS[m.id] && puede(m.id))?.id ?? 'mi-dia'}`
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  if (!isLoggedIn()) return <Navigate to="/login" replace />
+  if (!isLoggedIn()) return <Navigate to="/portal" replace />
   // La cuenta pudo ser desactivada o borrada: se cierra la sesión
-  if (!cuentaActual()) { logout(); return <Navigate to="/login" replace /> }
+  if (!cuentaActual()) { logout(); return <Navigate to="/portal" replace /> }
   return <>{children}</>
 }
 
@@ -52,10 +53,28 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+/** Clave de acceso para la ruta de login de funcionarios. */
+const CLAVE_FUNCIONARIOS = 'emcagua'
+const SK = 'emcagua_login_ok'
+
+/** Protege /login: solo se puede acceder con ?clave=emcagua en la URL. */
+function LoginGuard({ children }: { children: React.ReactNode }) {
+  const [params] = useSearchParams()
+  const claveUrl = params.get('clave')
+  // Si la clave viene en la URL, guardarla en sessionStorage (para que sobreviva recargas del formulario)
+  if (claveUrl === CLAVE_FUNCIONARIOS) {
+    try { sessionStorage.setItem(SK, '1') } catch { /* sin almacenamiento */ }
+  }
+  // Permitir acceso si la clave es correcta o si ya fue validada en esta sesión del navegador
+  const autorizado = claveUrl === CLAVE_FUNCIONARIOS || (() => { try { return sessionStorage.getItem(SK) === '1' } catch { return false } })()
+  if (!autorizado) return <Navigate to="/portal" replace />
+  return <>{children}</>
+}
+
 export default function App() {
   return (
     <Routes>
-      <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+      <Route path="/login" element={<LoginGuard><PublicRoute><Login /></PublicRoute></LoginGuard>} />
       <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
         {Object.entries(PAGINAS).map(([id, Pagina]) => (
           <Route key={id} path={`/${id}`} element={<Permiso modulo={id}><Pagina /></Permiso>} />
@@ -64,7 +83,8 @@ export default function App() {
       </Route>
       <Route path="/portal" element={<Suspense fallback={null}><Portal /></Suspense>} />
       <Route path="/verificar" element={<Suspense fallback={null}><Verificar /></Suspense>} />
-      <Route path="*" element={<Navigate to="/mi-dia" replace />} />
+      <Route path="*" element={<Navigate to="/portal" replace />} />
     </Routes>
   )
 }
+

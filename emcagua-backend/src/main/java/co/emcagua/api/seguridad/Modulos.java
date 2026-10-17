@@ -12,7 +12,7 @@ public final class Modulos {
 
     public static final List<String> TODOS = List.of(
         "mi-dia", "dashboard", "analitica", "asistente", "reporte", "usuarios", "lecturas", "facturacion", "pagos", "gastos", "pqr",
-        "perdidas", "inventario", "documentos", "redes", "avisos", "tarifas", "sui", "nomina", "configuracion", "cuentas");
+        "perdidas", "inventario", "documentos", "redes", "avisos", "tarifas", "sui", "nomina", "configuracion", "cuentas", "auditoria");
 
     /** recurso (primer tramo después de /api/) → módulo que lo protege. */
     private static final Map<String, String> RECURSOS = Map.ofEntries(
@@ -28,7 +28,8 @@ public final class Modulos {
         Map.entry("documentos", "documentos"), Map.entry("emision", "documentos"),
         Map.entry("avisos-enviados", "avisos"),
         Map.entry("cuentas", "cuentas"), Map.entry("roles", "cuentas"),
-        Map.entry("configuracion", "configuracion"), Map.entry("sectores", "configuracion"), Map.entry("barrios", "configuracion"), Map.entry("chats", "asistente"));
+        Map.entry("configuracion", "configuracion"), Map.entry("sectores", "configuracion"), Map.entry("barrios", "configuracion"), Map.entry("chats", "asistente"),
+        Map.entry("auditoria", "auditoria"));
 
     /** Recursos que cualquier funcionario con sesión puede LEER (los necesitan varias pantallas). */
     private static final List<String> LECTURA_LIBRE = List.of("configuracion", "sectores", "barrios", "tarifas", "predios", "propietarios", "facturas", "medidores");

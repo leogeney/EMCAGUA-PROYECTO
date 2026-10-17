@@ -23,7 +23,7 @@ COPY --from=build /app/target/*.jar app.jar
 
 # Carpeta para respaldos de BD (se puede montar como volumen)
 RUN mkdir -p /data/respaldos && chown -R emcagua:emcagua /data/respaldos
-
+RUN apk add --no-cache postgresql16-client
 USER emcagua
 
 EXPOSE 8080

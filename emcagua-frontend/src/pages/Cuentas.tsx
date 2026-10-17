@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useNomina } from '../data/NominaContext'
 import { mensajeError, MODO_API } from '../data/api'
 import { borrarRol, guardarCuenta, guardarRol, MODULOS, useCuentas, type Cuenta, type Rol } from '../data/cuentas'
@@ -7,7 +8,7 @@ import Avatar from '../components/ui/Avatar'
 import Ico from '../components/ui/Icon'
 import { useToast } from '../components/ui/Toast'
 import { fecha, hora } from '../utils/format'
-import { getUsername } from '../utils/session'
+import { getUsername, puede } from '../utils/session'
 
 type Tab = 'cuentas' | 'roles'
 const D = { plus: 'M12 4v16m8-8H4', lock: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z', info: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' }
@@ -24,8 +25,16 @@ export default function Cuentas() {
           <h1 className="text-[28px] font-extrabold tracking-tight text-dark leading-none">Cuentas y roles</h1>
           <p className="text-sm text-gray-500 mt-2">Quién entra al sistema y qué módulos ve cada uno.</p>
         </div>
-        <div className="flex p-1 bg-white border border-gray-100 rounded-xl shadow-sm">
-          {([['cuentas', 'Cuentas'], ['roles', 'Roles y permisos']] as [Tab, string][]).map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`px-3 h-9 rounded-lg text-sm font-semibold ${tab === k ? 'bg-dark text-white' : 'text-gray-500 hover:text-dark'}`}>{l}</button>)}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex p-1 bg-white border border-gray-100 rounded-xl shadow-sm">
+            {([['cuentas', 'Cuentas'], ['roles', 'Roles y permisos']] as [Tab, string][]).map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`px-3 h-9 rounded-lg text-sm font-semibold ${tab === k ? 'bg-dark text-white' : 'text-gray-500 hover:text-dark'}`}>{l}</button>)}
+          </div>
+          {puede('auditoria') && (
+            <Link to="/auditoria" className="px-3.5 h-11 bg-white border border-gray-100 hover:border-gray-200 rounded-xl shadow-sm text-sm font-semibold text-gray-700 hover:text-dark flex items-center gap-2 transition-colors no-underline">
+              <svg className="w-4 h-4 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+              Auditoría
+            </Link>
+          )}
         </div>
       </div>
       {tab === 'cuentas' ? <ListaCuentas /> : <Roles />}

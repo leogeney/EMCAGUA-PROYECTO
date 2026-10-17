@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { API_URL, tokenApi } from '../../data/api'
 import { logout, registrarActividad, sesionVigente } from '../../utils/session'
 
-const salir = (motivo: string) => { logout(); window.location.assign(`/login?motivo=${motivo}`) }
+const salir = (_motivo?: string) => { logout(); try { sessionStorage.removeItem('emcagua_login_ok') } catch { /* */ } window.location.assign(`/portal`) }
 
 /**
  * Cuida la sesión del funcionario mientras usa el sistema:
@@ -17,7 +17,7 @@ export default function GuardiaSesion() {
     const eventos = ['mousedown', 'keydown', 'touchstart', 'scroll'] as const
     eventos.forEach((e) => window.addEventListener(e, actividad, { passive: true }))
     const reloj = setInterval(() => { if (!sesionVigente()) salir('inactividad') }, 20_000)
-    const otraPestana = (e: StorageEvent) => { if (e.key === 'emcagua_user' && !e.newValue) window.location.assign('/login') }
+    const otraPestana = (e: StorageEvent) => { if (e.key === 'emcagua_user' && !e.newValue) { try { sessionStorage.removeItem('emcagua_login_ok') } catch { /* */ } window.location.assign('/portal') } }
     window.addEventListener('storage', otraPestana)
     // Sesión sin token = demostración: solo vale si el servidor está apagado
     if (!tokenApi()) {

@@ -25,11 +25,13 @@ public class AuthControlador {
     private final CuentaRepositorio cuentas;
     private final PasswordEncoder cifrador;
     private final JwtServicio jwt;
+    private final co.emcagua.api.auditoria.AuditoriaServicio auditoria;
 
-    public AuthControlador(CuentaRepositorio cuentas, PasswordEncoder cifrador, JwtServicio jwt) {
+    public AuthControlador(CuentaRepositorio cuentas, PasswordEncoder cifrador, JwtServicio jwt, co.emcagua.api.auditoria.AuditoriaServicio auditoria) {
         this.cuentas = cuentas;
         this.cifrador = cifrador;
         this.jwt = jwt;
+        this.auditoria = auditoria;
     }
 
     public record Ingreso(@NotBlank String usuario, @NotBlank String clave) {}
@@ -49,6 +51,7 @@ public class AuthControlador {
         if (c == null || !cifrador.matches(i.clave(), c.getClaveHash())) return ResponseEntity.status(401).body(Map.of("error", "Usuario o contraseña incorrectos"));
         if (!c.isActivo()) return ResponseEntity.status(403).body(Map.of("error", "Esta cuenta está desactivada. Habla con el gerente."));
         c.setUltimoAcceso(Instant.now());
+        auditoria.registrar(c.getUsuario(), c.getNombre(), c.getRol().getNombre(), "seguridad", "LOGIN", "Inicio de sesión exitoso", "Cuenta", c.getUsuario(), null, co.emcagua.api.auditoria.AuditoriaServicio.ipClienteActual());
         return ResponseEntity.ok(Map.of("token", jwt.crear(c), "expiraEnSegundos", jwt.segundosDeVida(), "cuenta", CuentaVista.de(c)));
     }
 
@@ -66,6 +69,7 @@ public class AuthControlador {
         if (!cifrador.matches(cc.actual(), c.getClaveHash())) throw new ErrorNegocio("La contraseña actual no es correcta");
         if (cc.nueva().length() < 8) throw new ErrorNegocio("La nueva contraseña debe tener al menos 8 caracteres");
         c.setClaveHash(cifrador.encode(cc.nueva()));
+        auditoria.registrar("seguridad", "CAMBIO_CLAVE", "Cambió su contraseña de acceso", "Cuenta", c.getUsuario(), null);
         return Map.of("mensaje", "Contraseña actualizada");
     }
 }

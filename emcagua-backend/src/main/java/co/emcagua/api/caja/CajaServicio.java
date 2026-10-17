@@ -33,8 +33,9 @@ public class CajaServicio {
     private final CierreCajaRepositorio cierres;
     private final ConfiguracionServicio config;
     private final VerificacionServicio verificacion;
+    private final co.emcagua.api.auditoria.AuditoriaServicio auditoria;
 
-    public CajaServicio(FacturaRepositorio facturas, PagoRepositorio pagos, PredioRepositorio predios, EgresoRepositorio egresos, CierreCajaRepositorio cierres, ConfiguracionServicio config, VerificacionServicio verificacion) {
+    public CajaServicio(FacturaRepositorio facturas, PagoRepositorio pagos, PredioRepositorio predios, EgresoRepositorio egresos, CierreCajaRepositorio cierres, ConfiguracionServicio config, VerificacionServicio verificacion, co.emcagua.api.auditoria.AuditoriaServicio auditoria) {
         this.facturas = facturas;
         this.pagos = pagos;
         this.predios = predios;
@@ -42,6 +43,7 @@ public class CajaServicio {
         this.cierres = cierres;
         this.config = config;
         this.verificacion = verificacion;
+        this.auditoria = auditoria;
     }
 
     /** facturas: ids a pagar · predio: solo para reconectar un predio que ya no debe facturas. */
@@ -94,7 +96,12 @@ public class CajaServicio {
         p.setCodigoVerificacion(verificacion.codigoRecibo(p.getNumero(), principal.getCodigo(), total, ahora));
         lista.forEach(f -> { f.setEstado(Factura.Estado.PAGADA); f.setFechaPago(ahora); });
         facturas.saveAll(lista);
-        return pagos.save(p);
+        Pago guardado = pagos.save(p);
+        String uCobro = cajero != null ? cajero.getUsuario() : "portal";
+        String nCobro = cajero != null ? cajero.getNombre() : "Portal del Suscriptor";
+        String rCobro = cajero != null && cajero.getRol() != null ? cajero.getRol().getNombre() : "Suscriptor";
+        auditoria.registrar(uCobro, nCobro, rCobro, "caja", "COBRO", "Cobro de recibo " + guardado.getNumero() + " por $" + total + " (" + guardado.getConcepto() + ")", "Pago", guardado.getNumero(), "{\"total\":" + total + ",\"metodo\":\"" + c.metodo() + "\",\"reconexion\":" + reconexion + "}", co.emcagua.api.auditoria.AuditoriaServicio.ipClienteActual());
+        return guardado;
     }
 
     public record ResumenDia(LocalDate fecha, long base, long efectivo, long transferencias, long enLinea, long egresosEfectivo, long efectivoEsperado, int pagos, boolean cerrada) {}
@@ -125,6 +132,11 @@ public class CajaServicio {
         c.setEfectivoContado(contado);
         c.setDiferencia(contado - r.efectivoEsperado());
         c.setNota(nota);
-        return cierres.save(c);
+        CierreCaja guardado = cierres.save(c);
+        String uCierre = cajero != null ? cajero.getUsuario() : "sistema";
+        String nCierre = cajero != null ? cajero.getNombre() : "Sistema";
+        String rCierre = cajero != null && cajero.getRol() != null ? cajero.getRol().getNombre() : "Cajero";
+        auditoria.registrar(uCierre, nCierre, rCierre, "caja", "CIERRE_CAJA", "Cierre y arqueo de caja del " + dia + ": efectivo contado $" + contado + " (diferencia: $" + guardado.getDiferencia() + ")", "CierreCaja", dia.toString(), "{\"esperado\":" + r.efectivoEsperado() + ",\"contado\":" + contado + ",\"diferencia\":" + guardado.getDiferencia() + "}", co.emcagua.api.auditoria.AuditoriaServicio.ipClienteActual());
+        return guardado;
     }
 }

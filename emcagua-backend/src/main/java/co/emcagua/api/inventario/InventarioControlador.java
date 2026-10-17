@@ -20,10 +20,12 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 public class InventarioControlador {
     private final MaterialRepositorio materiales;
     private final MovimientoRepositorio movimientos;
+    private final co.emcagua.api.auditoria.AuditoriaServicio auditoria;
 
-    public InventarioControlador(MaterialRepositorio materiales, MovimientoRepositorio movimientos) {
+    public InventarioControlador(MaterialRepositorio materiales, MovimientoRepositorio movimientos, co.emcagua.api.auditoria.AuditoriaServicio auditoria) {
         this.materiales = materiales;
         this.movimientos = movimientos;
+        this.auditoria = auditoria;
     }
 
     public record Mover(Long material, MovimientoInventario.Tipo tipo, int cantidad, String motivo) {}
@@ -35,6 +37,7 @@ public class InventarioControlador {
         Material mat = materiales.findById(m.material()).orElseThrow(() -> new NoEncontrado("No existe el material"));
         if (m.cantidad() < 0 || (m.tipo() != MovimientoInventario.Tipo.AJUSTE && m.cantidad() == 0)) throw new ErrorNegocio("Cantidad inválida");
         if (m.motivo() == null || m.motivo().isBlank()) throw new ErrorNegocio("Escribe el motivo del movimiento");
+        int anterior = mat.getStock();
         int nuevo = switch (m.tipo()) {
             case ENTRADA -> mat.getStock() + m.cantidad();
             case SALIDA -> {
@@ -53,6 +56,8 @@ public class InventarioControlador {
         mv.setMotivo(m.motivo().trim());
         mv.setUsuario(Sesion.nombre());
         mv.setFecha(Instant.now());
-        return movimientos.save(mv);
+        MovimientoInventario guardado = movimientos.save(mv);
+        auditoria.registrar("inventario", "MOVIMIENTO_INVENTARIO", "Movimiento de " + m.tipo().name() + " (" + m.cantidad() + " " + mat.getUnidad() + ") en " + mat.getNombre() + ": " + m.motivo() + " (stock: " + anterior + " -> " + nuevo + ")", "Material", mat.getId().toString(), "{\"tipo\":\"" + m.tipo() + "\",\"cantidad\":" + m.cantidad() + ",\"stockAnterior\":" + anterior + ",\"stockNuevo\":" + nuevo + "}");
+        return guardado;
     }
 }

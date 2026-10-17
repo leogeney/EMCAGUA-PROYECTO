@@ -5,6 +5,7 @@
  */
 import { useSyncExternalStore } from 'react'
 import { api, MODO_API } from './api'
+import { EMPLEADOS_DEMO } from './nomina'
 
 export type Modulo = { id: string; nombre: string; grupo: string }
 
@@ -108,5 +109,18 @@ export const borrarRol = (id: string) => enServidor({ ...estado, roles: estado.r
 /** El servidor anota el último acceso al iniciar sesión; en demostración se anota aquí. */
 export const registrarAcceso = (usuario: string) => { if (!MODO_API) guardar({ ...estado, cuentas: estado.cuentas.map((c) => (c.usuario === usuario ? { ...c, ultimoAcceso: Date.now() } : c)) }) }
 
-export const buscarCuenta = (usuario: string) => estado.cuentas.find((c) => c.usuario.toLowerCase() === usuario.trim().toLowerCase())
+export const buscarCuenta = (identificador: string) => {
+  const q = identificador.trim().toLowerCase()
+  const ctaDirecta = estado.cuentas.find((c) => c.usuario.toLowerCase() === q)
+  if (ctaDirecta) return ctaDirecta
+  const soloNum = q.replace(/\D/g, '')
+  if (soloNum.length >= 6) {
+    const emp = EMPLEADOS_DEMO.find((e) => e.cedula.replace(/\D/g, '') === soloNum)
+    if (emp) {
+      const primerNombre = emp.nombre.toLowerCase().split(' ')[0]
+      return estado.cuentas.find((c) => c.nombre.toLowerCase().includes(primerNombre))
+    }
+  }
+  return undefined
+}
 export const rolDe = (c?: Cuenta) => estado.roles.find((r) => r.id === c?.rol)

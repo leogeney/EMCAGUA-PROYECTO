@@ -22,7 +22,7 @@ import Ico from '../components/ui/Icon'
 import { useConfig } from '../data/config'
 import { cop, fecha, fechaCorta } from '../utils/format'
 import { etiquetaPredio, limpiarCedula, otrosPredios, saldoPropietario } from '../data/propietarios'
-import { getUsername, haySesionFuncionario, logout } from '../utils/session'
+import { haySesionFuncionario, logout } from '../utils/session'
 
 const D = {
   lock: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z',
@@ -73,9 +73,8 @@ export default function Portal() {
   useEffect(() => { void cargarConfigPublica() }, [])
 
   const [modo, setModo] = useState<'entrar' | 'crear' | 'nuevo'>('entrar')
-  const [funcionario, setFuncionario] = useState(haySesionFuncionario)
-  /** Un suscriptor entró en este navegador: la sesión de funcionario (si había) se cierra para que no pueda pasar al sistema interno. */
-  const cerrarFuncionario = () => { if (haySesionFuncionario()) { logout(); setFuncionario(false) } }
+  /** Si había una sesión de funcionario abierta en este navegador, se cierra en segundo plano sin alertar al ciudadano. */
+  const cerrarFuncionario = () => { if (haySesionFuncionario()) logout() }
   const [clave, setClave] = useState('')
   const [clave2, setClave2] = useState('')
   const [ver, setVer] = useState(false)
@@ -149,15 +148,6 @@ export default function Portal() {
         </div>
       </header>
 
-      {funcionario && !u && (
-        <div className="bg-amber-50 border-b border-amber-200">
-          <div className="max-w-5xl mx-auto px-4 py-2.5 flex flex-col sm:flex-row sm:items-center gap-2 text-sm text-amber-900">
-            <span className="flex-1">Hay una sesión de funcionario abierta en este navegador ({getUsername()}). Si este computador lo va a usar un suscriptor, ciérrala primero.</span>
-            <button onClick={() => { logout(); setFuncionario(false) }} className="btn-sm h-8 bg-white">Cerrar sesión de funcionario</button>
-          </div>
-        </div>
-      )}
-
       {!u ? (
         <main className={`max-w-5xl mx-auto px-4 py-10 grid grid-cols-1 lg:grid-cols-2 gap-8 ${modo === 'nuevo' ? 'items-start' : 'items-center'}`}>
           <div className={modo === 'nuevo' ? 'lg:sticky lg:top-10 lg:pt-16' : ''}>
@@ -176,7 +166,7 @@ export default function Portal() {
                 <h2 className="text-lg font-bold text-dark mb-1">Ingresa</h2>
                 <p className="text-sm text-gray-500 mb-5">Con el código de suscriptor que aparece en tu factura (o tu cédula, si tienes varias casas) y tu contraseña.</p>
                 <div className="space-y-3">
-                  <div><label className="field-label">Código de suscriptor o cédula</label><input value={id} onChange={(e) => { setId(e.target.value); setError('') }} placeholder="Ej: 10237" className="field h-12 text-lg tabular-nums" inputMode="numeric" autoComplete="username" /></div>
+                  <div><label className="field-label">Código de suscriptor o cédula</label><input value={id} onChange={(e) => { setId(e.target.value); setError('') }} placeholder="Ej: 10237 o 1098765432" className="field h-12 text-lg tabular-nums" inputMode="numeric" autoComplete="username" /></div>
                   {campoClave(clave, setClave, 'Contraseña', entrar, 'current-password')}
                   <div className="flex justify-end"><button type="button" onClick={() => setOlvide((x) => !x)} className="text-xs font-semibold text-secondary hover:underline">¿Olvidaste tu contraseña?</button></div>
                   {olvide && <p className="text-xs text-gray-600 bg-gray-soft rounded-lg px-3 py-2">Acércate a la oficina de EMCAGUA con tu cédula: te quitamos la contraseña anterior y vuelves a crear tu cuenta desde aquí.</p>}

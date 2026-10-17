@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import co.emcagua.api.comun.ErrorNegocio;
+import co.emcagua.api.nomina.EmpleadoRepositorio;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -23,12 +24,14 @@ import jakarta.validation.constraints.NotBlank;
 @Tag(name = "Sesión", description = "Entrar, ver la cuenta actual y cambiar la contraseña")
 public class AuthControlador {
     private final CuentaRepositorio cuentas;
+    private final EmpleadoRepositorio empleados;
     private final PasswordEncoder cifrador;
     private final JwtServicio jwt;
     private final co.emcagua.api.auditoria.AuditoriaServicio auditoria;
 
-    public AuthControlador(CuentaRepositorio cuentas, PasswordEncoder cifrador, JwtServicio jwt, co.emcagua.api.auditoria.AuditoriaServicio auditoria) {
+    public AuthControlador(CuentaRepositorio cuentas, EmpleadoRepositorio empleados, PasswordEncoder cifrador, JwtServicio jwt, co.emcagua.api.auditoria.AuditoriaServicio auditoria) {
         this.cuentas = cuentas;
+        this.empleados = empleados;
         this.cifrador = cifrador;
         this.jwt = jwt;
         this.auditoria = auditoria;
@@ -42,13 +45,26 @@ public class AuthControlador {
         }
     }
 
-    @Operation(summary = "Entrar con usuario y contraseña; devuelve el token de sesión")
+    @Operation(summary = "Entrar con documento/usuario y contraseña; devuelve el token de sesión")
     @PostMapping("/login")
     @Transactional
     public ResponseEntity<?> login(@Valid @RequestBody Ingreso i) {
-        Cuenta c = cuentas.findByUsuario(i.usuario().trim().toLowerCase()).orElse(null);
-        // Mismo mensaje si no existe o si la clave está mal: no se revela qué usuarios existen
-        if (c == null || !cifrador.matches(i.clave(), c.getClaveHash())) return ResponseEntity.status(401).body(Map.of("error", "Usuario o contraseña incorrectos"));
+        String raw = i.usuario().trim();
+        String u = raw.toLowerCase();
+        String soloNum = raw.replaceAll("\\D", "");
+
+        Cuenta c = cuentas.findByUsuario(u).orElse(null);
+        // Si no existe cuenta con ese usuario directo, verificar si ingresó la cédula de un empleado
+        if (c == null && soloNum.length() >= 5) {
+            c = empleados.findByCedula(soloNum)
+                .flatMap(emp -> cuentas.findAll().stream()
+                    .filter(cta -> cta.getNombre().equalsIgnoreCase(emp.getNombre()))
+                    .findFirst())
+                .orElse(null);
+        }
+
+        // Mismo mensaje si no existe o si la clave está mal: no se revela qué cuentas existen
+        if (c == null || !cifrador.matches(i.clave(), c.getClaveHash())) return ResponseEntity.status(401).body(Map.of("error", "Documento, usuario o contraseña incorrectos"));
         if (!c.isActivo()) return ResponseEntity.status(403).body(Map.of("error", "Esta cuenta está desactivada. Habla con el gerente."));
         c.setUltimoAcceso(Instant.now());
         auditoria.registrar(c.getUsuario(), c.getNombre(), c.getRol().getNombre(), "seguridad", "LOGIN", "Inicio de sesión exitoso", "Cuenta", c.getUsuario(), null, co.emcagua.api.auditoria.AuditoriaServicio.ipClienteActual());

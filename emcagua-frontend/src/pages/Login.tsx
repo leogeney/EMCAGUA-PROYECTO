@@ -55,7 +55,7 @@ export default function Login() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!form.username.trim() || !form.password) {
-      setError('Ingresa tu usuario y contraseña')
+      setError('Ingresa tu documento y contraseña')
       return
     }
     setError('')
@@ -152,8 +152,8 @@ export default function Login() {
             <div className="bg-white rounded-3xl shadow-xl shadow-black/[0.06] ring-1 ring-black/[0.04] p-7 sm:p-9">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-2xl font-extrabold tracking-tight text-dark">Iniciar sesión</h2>
-                  <p className="mt-1 text-sm text-gray-500">Acceso para funcionarios de EMCAGUA</p>
+                  <h2 className="text-2xl font-extrabold tracking-tight text-dark">Portal Interno</h2>
+                  <p className="mt-1 text-sm text-gray-500">Gestión operativa y administrativa</p>
                 </div>
                 <span title={servidor === 'apagado' ? 'El servidor no responde: se abrirá en modo de prueba con datos de ejemplo' : undefined}
                   className={`shrink-0 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-[11px] font-semibold ${servidor === 'ok' ? 'bg-green-50 text-green-700' : servidor === 'apagado' ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>
@@ -165,12 +165,12 @@ export default function Login() {
               {aviso && !error && <p className="mt-5 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2.5 text-sm text-amber-800">{aviso}</p>}
               <form onSubmit={handleSubmit} className="mt-7 space-y-4" noValidate>
                 <div>
-                  <label htmlFor="username" className="block text-sm font-semibold text-dark mb-1.5">Usuario</label>
+                  <label htmlFor="username" className="block text-sm font-semibold text-dark mb-1.5">Documento de identidad (Cédula)</label>
                   <div className="relative group">
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-secondary transition-colors"><Ico d={D.user} /></span>
                     <input id="username" autoComplete="username" autoFocus value={form.username}
                       onChange={(e) => { setForm({ ...form, username: e.target.value }); setError('') }}
-                      placeholder="Tu usuario" className={campo} />
+                      placeholder="Número de cédula o usuario" className={campo} />
                   </div>
                 </div>
 
@@ -207,19 +207,10 @@ export default function Login() {
               </form>
             </div>
 
-            <Link to="/portal" className="mt-4 flex items-center gap-3 rounded-2xl bg-white/70 hover:bg-white ring-1 ring-black/[0.04] px-4 py-3.5 transition-colors group">
-              <span className="h-10 w-10 shrink-0 rounded-xl bg-primary/15 text-primary-700 flex items-center justify-center"><Ico d={D.receipt} /></span>
-              <span className="flex-1 min-w-0">
-                <span className="block text-sm font-semibold text-dark">¿Eres usuario del servicio?</span>
-                <span className="block text-xs text-gray-500">Consulta y paga tu factura en la oficina virtual</span>
-              </span>
-              <Ico d={D.arrow} className="w-4 h-4 text-gray-400 group-hover:text-dark group-hover:translate-x-0.5 transition-all" />
-            </Link>
-
             <p className="mt-6 text-center text-xs text-gray-400">
-              <Link to="/verificar" className="hover:text-dark">Verificar un documento</Link>
+              <Link to="/portal" className="hover:text-dark">Oficina virtual de suscriptores</Link>
               <span className="mx-2">·</span>
-              Acceso exclusivo para personal autorizado
+              <Link to="/verificar" className="hover:text-dark">Verificar un documento</Link>
             </p>
           </div>
         </div>

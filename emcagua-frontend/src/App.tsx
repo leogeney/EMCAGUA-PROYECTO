@@ -75,6 +75,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginGuard><PublicRoute><Login /></PublicRoute></LoginGuard>} />
+      <Route path="/gestion" element={<PublicRoute><Login /></PublicRoute>} />
       <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
         {Object.entries(PAGINAS).map(([id, Pagina]) => (
           <Route key={id} path={`/${id}`} element={<Permiso modulo={id}><Pagina /></Permiso>} />

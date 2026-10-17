@@ -120,14 +120,16 @@ function FormCuenta({ inicial, onClose }: { inicial: Cuenta | null; onClose: () 
   const elegirEmpleado = (id: string) => {
     const e = empleados.find((x) => x.id === id)
     if (!e) return
-    let u = slug(e.nombre.split(' ')[0]); const base = u; let n = 2
+    const cedulaLimpia = e.cedula ? e.cedula.replace(/\D/g, '') : ''
+    const base = cedulaLimpia || slug(e.nombre.split(' ')[0])
+    let u = base; let n = 2
     while (cuentas.some((x) => x.usuario === u)) u = `${base}${n++}`
     setC((x) => ({ ...x, nombre: e.nombre, cargo: e.cargo, usuario: u }))
   }
 
   return (
     <Modal open onClose={onClose} title={inicial ? `Editar cuenta · ${inicial.usuario}` : 'Nueva cuenta'}
-      footer={<div className="flex justify-end gap-2"><button onClick={onClose} className="btn-secondary">Cancelar</button><button disabled={!valido} onClick={() => { guardarCuenta({ ...c, creada: c.creada || Date.now() }, clave).then(() => toast(inicial ? 'Cuenta actualizada' : 'Cuenta creada', `${c.nombre} entra con el usuario «${c.usuario}».`)).catch((e) => toast('No se guardó la cuenta', mensajeError(e), 'warning')); onClose() }} className="btn-primary">Guardar</button></div>}>
+      footer={<div className="flex justify-end gap-2"><button onClick={onClose} className="btn-secondary">Cancelar</button><button disabled={!valido} onClick={() => { guardarCuenta({ ...c, creada: c.creada || Date.now() }, clave).then(() => toast(inicial ? 'Cuenta actualizada' : 'Cuenta creada', `${c.nombre} entra con el documento/usuario «${c.usuario}».`)).catch((e) => toast('No se guardó la cuenta', mensajeError(e), 'warning')); onClose() }} className="btn-primary">Guardar</button></div>}>
       <div className="p-6 space-y-4">
         {!inicial && sinCuenta.length > 0 && (
           <div>
@@ -137,7 +139,7 @@ function FormCuenta({ inicial, onClose }: { inicial: Cuenta | null; onClose: () 
         )}
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2"><label className="field-label">Nombre completo</label><input value={c.nombre} onChange={(e) => setC({ ...c, nombre: e.target.value })} className="field" /></div>
-          <div><label className="field-label">Usuario</label><input value={c.usuario} disabled={!!inicial} onChange={(e) => setC({ ...c, usuario: e.target.value.toLowerCase().replace(/[^a-z0-9._]/g, '') })} className="field font-mono" /></div>
+          <div><label className="field-label">Documento o usuario (para ingresar)</label><input value={c.usuario} disabled={!!inicial} onChange={(e) => setC({ ...c, usuario: e.target.value.toLowerCase().replace(/[^a-z0-9._]/g, '') })} placeholder="Ej: 1098765432" className="field font-mono" /></div>
           <div><label className="field-label">Cargo</label><input value={c.cargo} onChange={(e) => setC({ ...c, cargo: e.target.value })} className="field" /></div>
         </div>
         {repetido && <p className="text-xs text-red-600">Ese usuario ya existe.</p>}

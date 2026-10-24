@@ -10,6 +10,8 @@ import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -60,10 +62,7 @@ public class FacturacionServicio {
     public Periodo periodoEnLectura() {
         Integer ultimo = facturas.ultimoPeriodoFacturado();
         if (ultimo == null) {
-            // Sin facturas todavía: el mes actual, o el siguiente si su fecha de generación ya pasó (igual que el frontend)
-            LocalDate hoy = LocalDate.now(ZONA);
-            Periodo actual = Periodo.de(hoy);
-            return hoy.isBefore(actual.generacion()) ? actual : actual.siguiente();
+            return Periodo.de(LocalDate.now(ZONA));
         }
         return new Periodo(ultimo / 12, ultimo % 12 + 1).siguiente();
     }
@@ -144,12 +143,32 @@ public class FacturacionServicio {
         return ult.isEmpty() ? 0 : (int) Math.round(ult.stream().mapToInt(Factura::getConsumo).average().orElse(0));
     }
 
-    /** Todos los días a las 12:10 a. m.: si ya llegó la fecha de generación del periodo, se factura solo. */
+    /**
+     * Al arrancar el backend y todas las noches a las 12:10 a. m.:
+     * si el servidor estuvo apagado o ya llegó la fecha de corte/generación del periodo pendiente,
+     * se generan las facturas automáticamente sin esperar.
+     */
+    @EventListener(ApplicationReadyEvent.class)
     @Scheduled(cron = "0 10 0 * * *", zone = "America/Bogota")
     @Transactional
     public void cierreAutomatico() {
-        Periodo p = periodoEnLectura();
-        if (!LocalDate.now(ZONA).isBefore(p.generacion())) cerrar(p);
+        if (predios.count() == 0) return;
+        try {
+            LocalDate hoy = LocalDate.now(ZONA);
+            Periodo actual = Periodo.de(hoy);
+            Periodo p = periodoEnLectura();
+            while (p.compareTo(actual) <= 0 && !hoy.isBefore(p.generacion())) {
+                log.info("Cierre de facturación automático (fecha de corte {} alcanzada): generando facturas de {}...", p.generacion(), p.nombre());
+                cerrar(p);
+                Periodo siguiente = periodoEnLectura();
+                if (siguiente.equals(p)) {
+                    break;
+                }
+                p = siguiente;
+            }
+        } catch (Exception e) {
+            log.error("Error durante el cierre automático de facturación: {}", e.getMessage(), e);
+        }
     }
 
     @Transactional
